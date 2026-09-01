@@ -1,0 +1,5 @@
+[scenario]
+id = "compliant-two-phase"
+workflow = "implement"
+run_dir = "run"
+expect = "compliant"

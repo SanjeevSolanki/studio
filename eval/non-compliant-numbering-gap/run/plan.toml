@@ -1,0 +1,11 @@
+[plan]
+task = "Add a health-check endpoint"
+total_phases = 2
+
+[[phases]]
+number = 1
+file = "phase-01-design.md"
+
+[[phases]]
+number = 3
+file = "phase-03-implement.md"
