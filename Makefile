@@ -187,6 +187,7 @@ test-coverage: check-pytest-cov
 		--cov-report=xml:coverage.xml \
 		--cov-report=html \
 		-v --tb=short
+	@$(PYTHON) scripts/rewrite_coverage_xml_paths.py coverage.xml
 	@$(PYTHON) scripts/check_coverage.py coverage.json --root skills/studio/scripts/studio --min 90 --exclude vendor/
 	@echo ""
 	@echo "Coverage report generated:"
