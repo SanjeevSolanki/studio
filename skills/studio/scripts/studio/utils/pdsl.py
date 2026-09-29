@@ -122,6 +122,7 @@ class _BlockValidationState:
     menu_name: Optional[str] = None
     menu_type_line: int = 0
     menu_shape_line: int = 0
+    menu_key_line: int = 0
     gate_scope: bool = False
     sub_header_indent: Optional[int] = None
 
@@ -148,13 +149,22 @@ GATE_HEADER = "TYPE"
 # an absent declaration is handled: see MENU_SHAPE_HEADER's own docstring.
 MENU_SHAPE_TYPES = ("fixed-choice", "free-form")
 MENU_SHAPE_HEADER = "SHAPE"
+# A declared gate key (#327): the plan key an economy filter resolves this
+# decision/confirmation menu by, instead of matching on prose. Unlike
+# TYPE/SHAPE it is a declared *identifier*, not a token from a closed set -- a
+# bare snake_case name matching MENU_KEY_SYNTAX_RE (the same shape
+# GateRuling.decision_key already accepts as a plain str), made checkable at
+# declaration time. It shares the MENU declaration region and its rules with
+# TYPE/SHAPE. See architecture/specs/PDSL.md "declared gate key".
+MENU_KEY_HEADER = "KEY"
+MENU_KEY_SYNTAX_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 # The headers that keep a MENU's declaration region open rather than ending it
 # (`_handle_section_header_line`'s `gate_scope` check). Exported as one tuple,
 # not re-derived, so a test-side guard that needs to walk the same region
 # (e.g. `_menu_declaration_scan` in tests/test_pdsl_keywords.py) cannot drift
 # out of sync with the validator's own list the way an earlier, TITLE-only
 # copy of this check did before `SHAPE` existed.
-DECLARED_HEADER_NON_TERMINATORS = ("TITLE", GATE_HEADER, MENU_SHAPE_HEADER)
+DECLARED_HEADER_NON_TERMINATORS = ("TITLE", GATE_HEADER, MENU_SHAPE_HEADER, MENU_KEY_HEADER)
 # Sub-headers permitted at an indent inside a MENU. `TYPE`/`SHAPE` are absent on
 # purpose: both are dispatched before the indent guard, so listing them here
 # would be dead.
@@ -167,6 +177,11 @@ GATE_HEADER_ALIASES = frozenset({
 MENU_SHAPE_HEADER_ALIASES = frozenset({
     "ARITY", "MENU_SHAPE", "REPLY_SHAPE", "SELECTION_SHAPE", "ANSWER_SHAPE",
 })
+# Rejected alternatives for KEY (PDSL.md "declared gate key"): someone reaching
+# for one has written an inert header, so it is reported as a near-miss.
+MENU_KEY_HEADER_ALIASES = frozenset({
+    "ID", "DECISION_KEY", "GATE_KEY", "RESOLVE_KEY", "KEY_ID",
+})
 # MENU blocks legitimately carry prose and control-flow headers (NOTE:, ELSE:),
 # so an unrecognized one is reported only when it is a near-miss of a
 # declaration keyword. Distance 1 keeps ordinary words (TIME:, TIPS:, NOTE:,
@@ -174,6 +189,7 @@ MENU_SHAPE_HEADER_ALIASES = frozenset({
 # near-misses (SHAP:, SHAPES:).
 GATE_HEADER_TYPO_DISTANCE = 1
 MENU_SHAPE_HEADER_TYPO_DISTANCE = 1
+MENU_KEY_HEADER_TYPO_DISTANCE = 1
 # A declaration is recognized by discarding decoration rather than by listing
 # the forms it can take: enumerating them is unbounded, and three review passes
 # each found more (backticks, brackets, quotes, an arrow, a zero-width space).
@@ -214,6 +230,7 @@ SECTION_HEADERS = {
     "TITLE",
     "TYPE",
     "SHAPE",
+    "KEY",
     "OPTIONS",
     "INVALID",
 }
@@ -542,6 +559,7 @@ def _handle_unit_or_menu_line(
     state.menu_name = name
     state.menu_type_line = 0
     state.menu_shape_line = 0
+    state.menu_key_line = 0
     # Reset per MENU, not per block: a later menu may indent its sub-headers
     # differently, and a stale level would read that menu's whole body as
     # continuation text -- suppressing its declaration *and* the pre-existing
@@ -599,6 +617,8 @@ def _report_unrecognized_sub_header(
         findings.append(_gate_header_finding(block, line_no, raw_line, section_name))
     elif _is_menu_shape_header_typo(section_name):
         findings.append(_menu_shape_header_finding(block, line_no, raw_line, section_name))
+    elif _is_menu_key_header_typo(section_name):
+        findings.append(_menu_key_header_finding(block, line_no, raw_line, section_name))
 # @cpt-end:cpt-studio-algo-pdsl-validation-cli-helper-validate:p1:inst-gate-header-near-miss
 
 
@@ -641,11 +661,7 @@ def _handle_section_header_line(  # pylint: disable=too-many-return-statements
         state.gate_scope = False
     # @cpt-end:cpt-studio-algo-pdsl-validation-cli-helper-validate:p1:inst-gate-declaration-region
     # @cpt-begin:cpt-studio-algo-pdsl-validation-cli-helper-validate:p1:inst-gate-declaration-literal
-    if section_name == GATE_HEADER:
-        _handle_gate_type_header(block, line_no, raw_line, stripped, findings, state)
-        return True
-    if section_name == MENU_SHAPE_HEADER:
-        _handle_menu_shape_header(block, line_no, raw_line, stripped, findings, state)
+    if _dispatch_declared_menu_header(section_name, block, line_no, raw_line, stripped, findings, state):
         return True
     # @cpt-end:cpt-studio-algo-pdsl-validation-cli-helper-validate:p1:inst-gate-declaration-literal
     if indent_len > 0 and not (state.in_menu and section_name in MENU_SUB_HEADERS):
@@ -682,7 +698,41 @@ def _set_menu_shape_line(state: _BlockValidationState, line_no: int) -> None:
     state.menu_shape_line = line_no
 
 
+def _menu_key_line(state: _BlockValidationState) -> int:
+    return state.menu_key_line
+
+
+def _set_menu_key_line(state: _BlockValidationState, line_no: int) -> None:
+    state.menu_key_line = line_no
+
+
 # @cpt-begin:cpt-studio-algo-pdsl-validation-cli-helper-validate:p1:inst-gate-declaration-literal
+def _dispatch_declared_menu_header(
+    section_name: str,
+    block: PdslBlock,
+    line_no: int,
+    raw_line: str,
+    stripped: str,
+    findings: List[PdslFinding],
+    state: _BlockValidationState,
+) -> bool:
+    """Validate a `TYPE`/`SHAPE`/`KEY` declaration; return True if the line was one.
+
+    The three declared MENU sub-headers share a region and dispatch identically, so
+    grouping them in one table keeps `_handle_section_header_line`'s branching (and
+    its cognitive complexity) flat as declaration keywords are added.
+    """
+    handler = {
+        GATE_HEADER: _handle_gate_type_header,
+        MENU_SHAPE_HEADER: _handle_menu_shape_header,
+        MENU_KEY_HEADER: _handle_gate_key_header,
+    }.get(section_name)
+    if handler is None:
+        return False
+    handler(block, line_no, raw_line, stripped, findings, state)
+    return True
+
+
 def _handle_declared_menu_header(  # pylint: disable=too-many-arguments,too-many-locals
     block: PdslBlock,
     line_no: int,
@@ -692,7 +742,6 @@ def _handle_declared_menu_header(  # pylint: disable=too-many-arguments,too-many
     state: _BlockValidationState,
     *,
     header: str,
-    valid_tokens: Tuple[str, ...],
     get_declared_line: Callable[[_BlockValidationState], int],
     set_declared_line: Callable[[_BlockValidationState, int], None],
     outside_scope_noun: str,
@@ -700,14 +749,20 @@ def _handle_declared_menu_header(  # pylint: disable=too-many-arguments,too-many
     rule_duplicate: str,
     rule_bad_value: str,
     bad_value_hint: str,
+    valid_tokens: Optional[Tuple[str, ...]] = None,
+    value_ok: Optional[Callable[[str], bool]] = None,
+    bad_value_desc: Optional[Callable[[str], str]] = None,
 ) -> None:
     """Validate one declaration of *header* and record that this MENU carries one.
 
-    Shared by `_handle_gate_type_header` (`TYPE`) and `_handle_menu_shape_header`
-    (`SHAPE`, issue #186): both validate a single-token MENU declaration
-    against the same declaration-region/one-per-menu rules, differing only in
-    the header keyword, its valid tokens, which `_BlockValidationState` field
-    latches the first declaration's line, and each one's own rule IDs/wording.
+    Shared by `_handle_gate_type_header` (`TYPE`), `_handle_menu_shape_header`
+    (`SHAPE`, issue #186) and `_handle_gate_key_header` (`KEY`, #327): all
+    validate a single-value MENU declaration against the same
+    declaration-region/one-per-menu rules, differing only in the header keyword,
+    how the value is validated (a closed token set for TYPE/SHAPE via
+    `valid_tokens`; a syntax predicate for KEY via `value_ok`/`bad_value_desc`),
+    which `_BlockValidationState` field latches the first declaration's line, and
+    each one's own rule IDs/wording.
     The two accessors are plain functions using ordinary attribute syntax
     (`state.menu_type_line`), not a field name threaded through `getattr`/
     `setattr` -- a string-keyed version of this was tried and reverted: it
@@ -737,12 +792,17 @@ def _handle_declared_menu_header(  # pylint: disable=too-many-arguments,too-many
         return
     set_declared_line(state, line_no)
     value = stripped[len(header) + 1:].strip()
-    if value not in valid_tokens:
+    accepted = value_ok(value) if value_ok is not None else value in (valid_tokens or ())
+    if not accepted:
+        if bad_value_desc is not None:
+            message = bad_value_desc(value)
+        else:
+            message = (
+                f"MENU {header} must be one literal token of {', '.join(valid_tokens or ())} "
+                f"(found `{_elide(value)}`)"
+            )
         findings.append(_finding(
-            block, rule_bad_value, line_no, raw_line,
-            f"MENU {header} must be one literal token of {', '.join(valid_tokens)} "
-            f"(found `{_elide(value)}`)",
-            hint=bad_value_hint,
+            block, rule_bad_value, line_no, raw_line, message, hint=bad_value_hint,
         ))
 
 
@@ -790,6 +850,39 @@ def _handle_menu_shape_header(
         rule_duplicate="PDSL711", rule_bad_value="PDSL710",
         bad_value_hint="Declare shape statically; a free-form/multi-select reply is never native-dialog-routed.",
     )
+
+
+def _handle_gate_key_header(
+    block: PdslBlock,
+    line_no: int,
+    raw_line: str,
+    stripped: str,
+    findings: List[PdslFinding],
+    state: _BlockValidationState,
+) -> None:
+    """Validate one `KEY:` declaration and record that this MENU carries one (#327).
+
+    Unlike `TYPE`/`SHAPE`, whose value is one of a closed token set, `KEY` is a
+    declared snake_case identifier (`MENU_KEY_SYNTAX_RE`) -- so the shared helper
+    validates it with a syntax predicate rather than set membership. An absent
+    declaration is valid: an undeclared gate simply cannot be answered from the
+    plan by an economy filter, so its stop stands (it asks) -- fail toward
+    friction, never autonomy.
+    """
+    _handle_declared_menu_header(
+        block, line_no, raw_line, stripped, findings, state,
+        header=MENU_KEY_HEADER,
+        get_declared_line=_menu_key_line, set_declared_line=_set_menu_key_line,
+        outside_scope_noun="gate key", rule_outside_scope="PDSL722",
+        rule_duplicate="PDSL721", rule_bad_value="PDSL720",
+        value_ok=lambda value: bool(MENU_KEY_SYNTAX_RE.match(value)),
+        bad_value_desc=lambda value: (
+            f"MENU {MENU_KEY_HEADER} must be a snake_case identifier matching "
+            f"{MENU_KEY_SYNTAX_RE.pattern} (found `{_elide(value)}`)"
+        ),
+        bad_value_hint="Declare a bare lowercase key (letters, digits, _; starts with a letter); "
+                       "an economy filter later resolves it against the approved plan by exact match.",
+    )
 # @cpt-end:cpt-studio-algo-pdsl-validation-cli-helper-validate:p1:inst-gate-declaration-literal
 
 
@@ -835,6 +928,33 @@ def _report_malformed_gate_header(
         name, has_separator, value, MENU_SHAPE_TYPES
     ):
         findings.append(_menu_shape_header_finding(block, line_no, raw_line, name))
+        return
+    if _is_menu_key_header_typo(name) and _looks_like_key_declaration_attempt(name, has_separator, value):
+        findings.append(_menu_key_header_finding(block, line_no, raw_line, name))
+
+
+def _looks_like_key_declaration_attempt(name: str, has_separator: bool, value: str) -> bool:
+    """True when a near-miss of `KEY` is plausibly a declaration attempt (#327).
+
+    Mirrors `_looks_like_declaration_attempt`: an upper-case candidate is always an
+    attempt, and a lower- or mixed-case one -- `key:`/`Key:` -- is reported only
+    when its value itself looks like a key (a bare snake_case identifier per
+    `MENU_KEY_SYNTAX_RE`), the `KEY` analogue of "the value is a valid token". So a
+    miscased `key: deploy_target` is caught -- the common capitalisation typo, the
+    #152 silent-downgrade this guards -- while `key: the deploy target` stays prose.
+    A separator is required either way, so a line that merely starts with the word
+    `KEY` ("KEY facts about the plan") is not read as a declaration.
+
+    `value` here is the case-folded candidate value from `_gate_header_candidate`
+    (upper-cased for confusable detection), so its shape is tested case-insensitively
+    -- a single bare identifier token (`deploy_target`) looks like a key, while
+    anything with spaces ("the deploy target") is prose.
+    """
+    if not has_separator:
+        return False
+    if not name.isupper() and not MENU_KEY_SYNTAX_RE.match(value.lower()):
+        return False
+    return True
 
 
 def _looks_like_declaration_attempt(
@@ -923,6 +1043,23 @@ def _menu_shape_header_finding(
         hint=(
             f"Write `{MENU_SHAPE_HEADER}: <{' | '.join(MENU_SHAPE_TYPES)}>`; "
             "a near-miss leaves the shape undeclared."
+        ),
+    )
+
+
+def _menu_key_header_finding(
+    block: PdslBlock,
+    line_no: int,
+    raw_line: str,
+    name: str,
+) -> PdslFinding:
+    """Build the finding for a header that is not a usable gate-key declaration (#327)."""
+    return _finding(
+        block, "PDSL723", line_no, raw_line,
+        f"MENU sub-header `{_elide(name)}:` is not a gate-key declaration and is ignored",
+        hint=(
+            f"Write `{MENU_KEY_HEADER}: <snake_case_key>`; "
+            "a near-miss leaves the gate keyless (unanswerable from the plan)."
         ),
     )
 # @cpt-end:cpt-studio-algo-pdsl-validation-cli-helper-validate:p1:inst-gate-header-near-miss
@@ -1031,6 +1168,13 @@ def _is_menu_shape_header_typo(raw_name: str) -> bool:
     """True when a header looks like a botched shape (`SHAPE`) declaration (issue #186)."""
     return _is_declared_header_typo(
         raw_name, MENU_SHAPE_HEADER, MENU_SHAPE_HEADER_ALIASES, MENU_SHAPE_HEADER_TYPO_DISTANCE,
+    )
+
+
+def _is_menu_key_header_typo(raw_name: str) -> bool:
+    """True when a header looks like a botched gate-key (`KEY`) declaration (#327)."""
+    return _is_declared_header_typo(
+        raw_name, MENU_KEY_HEADER, MENU_KEY_HEADER_ALIASES, MENU_KEY_HEADER_TYPO_DISTANCE,
     )
 # @cpt-end:cpt-studio-algo-pdsl-validation-cli-helper-validate:p1:inst-gate-header-near-miss
 
