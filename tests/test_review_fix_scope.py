@@ -17,7 +17,13 @@ FIX_APPROVAL = "skills/studio/modules/review/fix-approval.md"
 
 def _source() -> str:
     path = REPO_ROOT / FIX_APPROVAL
-    return path.read_text(encoding="utf-8")
+    try:
+        return path.read_text(encoding="utf-8-sig", errors="replace")
+    except OSError as exc:
+        raise AssertionError(
+            f"{FIX_APPROVAL} could not be read ({type(exc).__name__}), so the tests that read "
+            "it are not checking anything; it was renamed, moved or removed"
+        ) from exc
 
 
 def _menu_option_lines(text: str, menu: str) -> dict:
@@ -88,3 +94,24 @@ def test_the_gate_carries_the_honour_marks_rule() -> None:
     text = _source()
     assert "route a broad scope" in text
     assert "ReviewFixMarkedOverrideConfirm" in text
+
+
+def test_returning_to_the_browser_preserves_marks() -> None:
+    """Returning to the findings browser from the fix-approval flow must set
+    REVIEW_FINDINGS_BROWSER_ENTRY = rerender, or ReviewFindingsBrowserReset treats it as a first
+    entry and silently clears SELECTED_FINDING_IDS -- discarding the marks this PR protects, one hop
+    earlier than the confirm guards. Covers all three return paths; reverting any of the three
+    ``SET ... = rerender`` clauses fails this test.
+    """
+    text = _source()
+    opt4 = _menu_option_lines(text, "ReviewFixScope").get("4", "")
+    assert "REVIEW_FINDINGS_BROWSER_ENTRY = rerender" in opt4, (
+        f"'back to browser' must preserve marks via ENTRY = rerender:\n  {opt4}")
+
+    opt2 = _menu_option_lines(text, "ReviewFixPartialIdsRetryMenu").get("2", "")
+    assert "REVIEW_FINDINGS_BROWSER_ENTRY = rerender" in opt2, (
+        f"partial-ID retry 'browser' must preserve marks via ENTRY = rerender:\n  {opt2}")
+
+    assert 'SET REVIEW_FINDINGS_BROWSER_ENTRY = rerender WHEN user.reply == "back"' in text, (
+        "the partial-ID 'back' path must set ENTRY = rerender before returning to the browser")
+    assert 'CONTINUE ReviewFindingsReportBrowser WHEN user.reply == "back"' in text
