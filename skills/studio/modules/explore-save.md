@@ -24,6 +24,7 @@ RULES:
   ALWAYS keep results in resource_context, not the shared context pack
 MENU ExploreSaveMenu
 TITLE: Save this exploration bundle?
+TYPE: decision
 OPTIONS:
   1 save -> WRITE the bundle to default_save_dir, then CONTINUE ExploreNextActions
   2 folder:<path> | folder -> WRITE the bundle to the user path, then CONTINUE ExploreNextActions
