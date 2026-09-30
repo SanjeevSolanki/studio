@@ -28,6 +28,7 @@ RULES:
 MENU CiDiscoverySkipMenu
 TITLE: CI discovery — find relevant CI targets automatically or skip? Discovery is the default when no targets are known yet; skip to proceed without it.
 TYPE: confirmation
+KEY: ci_discovery
 OPTIONS:
   1 discover -> CONTINUE CiDiscoveryRunExecute
   2 skip -> SET CI_DISCOVERY_STATUS = skipped; CONTINUE CiDiscoveryRunClassifyResult

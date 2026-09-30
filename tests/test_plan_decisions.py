@@ -1058,3 +1058,22 @@ class TestTheDocumentedGateDecisionsExampleIsResolvable:
                 f"documented gate_decisions key {key!r} is not snake_case; no KEY: could declare "
                 f"it, so exact-match resolution could never reach it"
             )
+
+
+def test_a_declared_menu_gate_key_resolves_from_a_plan_end_to_end(tmp_path: Path) -> None:
+    """The whole mechanism end-to-end: a key a shipped menu declares resolves to a plan's answer.
+
+    Ties the declared `KEY:` in a real menu (`SimpleModeChoice`) to `resolve()`. If the menu's key
+    is renamed, or the resolver's exact-match contract changes, this binding fails -- so the gate's
+    declared key and the plan's answer key cannot silently drift apart.
+    """
+    repo = Path(__file__).resolve().parents[1]
+    menu = (repo / "skills/studio/modules/gates/simple-mode.md").read_text(encoding="utf-8")
+    assert "KEY: interaction_mode" in menu, "SimpleModeChoice must declare KEY: interaction_mode"
+    body = (
+        '[plan]\ntask = "demo"\n\n'
+        '[[gate_decisions]]\nkey = "interaction_mode"\nvalue = "normal"\n'
+    )
+    found = pd.resolve("interaction_mode", _plan(tmp_path, body))
+    assert found.resolved, "the declared menu key did not resolve against the plan"
+    assert found.value == "normal"
