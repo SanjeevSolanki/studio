@@ -38,6 +38,7 @@ DO:
   STOP_TURN
 MENU WriteDocsAuthorTargetMissingMenu
 TITLE: Provide output path or choose a next step.
+TYPE: blocking
 OPTIONS:
   1 provide path — reply with the output file path -> SET AUTHOR_TARGET_PATHS = user.reply; CONTINUE WriteDocsAuthorDispatch
   2 plan first — run cf-documenting-planning to define document scope first -> LOAD and CONTINUE cf-documenting-planning

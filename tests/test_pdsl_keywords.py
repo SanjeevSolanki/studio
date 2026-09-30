@@ -1062,8 +1062,6 @@ UNTYPED_MENU_BASELINE: frozenset[str] = frozenset({
     "skills/studio/modules/auto-config-scan-docs.md#0::ScanConfirmMenu",
     "skills/studio/modules/brainstorm-panel-render.md#0::PanelEditMenu",
     "skills/studio/modules/brainstorm-wrap.md#0::WrapMenu",
-    "skills/studio/modules/ci-discovery-run.md#0::CiDiscoveryFailureMenu",
-    "skills/studio/modules/ci-discovery-run.md#0::CiDiscoverySkipMenu",
     "skills/studio/modules/coding-prep-gates.md#1::CodingBrainstormMenu",
     "skills/studio/modules/debug-prompts-failures.md#0::DebugRunFailureMenu",
     "skills/studio/modules/debug-prompts-failures.md#0::DebugStepFailureMenu",
@@ -1118,7 +1116,6 @@ UNTYPED_MENU_BASELINE: frozenset[str] = frozenset({
     "skills/studio/modules/workspace-router-quick.md#0::WorkspaceIntentMenu",
     "skills/studio/modules/workspace-router-quick.md#3::WorkspaceForceSyncConfirm",
     "skills/studio/modules/workspace-validate.md#1::ValidationFailureMenu",
-    "skills/studio/modules/write-docs-author-dispatch.md#2::WriteDocsAuthorTargetMissingMenu",
     "skills/studio/modules/write-docs-prep-gates.md#0::WriteDocsExploreMenu",
     "skills/studio/modules/write-docs-prep-gates.md#1::WriteDocsBrainstormMenu",
     "skills/studio/modules/write-skills-author-dispatch.md#2::WriteSkillsNoOutputMenu",
@@ -1137,7 +1134,7 @@ UNTYPED_MENU_BASELINE: frozenset[str] = frozenset({
 # cannot be `confirmation` per the auto-proceeding guard below -- blocking keeps it a
 # human choice). Ceiling set to the true post-typing count; six intervening typings had
 # shrunk the set to 105 without lowering it from 111, so this tightens it too.
-UNTYPED_MENU_BASELINE_CEILING = 101
+UNTYPED_MENU_BASELINE_CEILING = 94
 
 
 
@@ -1505,6 +1502,26 @@ def test_the_322_pipeline_menus_declare_their_ruled_type() -> None:
         + "\n  ".join(stale)
         + "\n\nRemove them from the baseline."
     )
+
+
+def test_the_tail_menus_declare_their_ruled_type() -> None:
+    """Next slice of the #322 migration (the tail beyond the four pipeline menus), typed per
+    ADR-0023's criteria: CiDiscoverySkipMenu offers a read-only cf-explore discovery (never
+    writes/mutates) with a stated default, so it is `confirmation` -- the same shape as
+    CodingExploreMenu. CiDiscoveryFailureMenu (failed-recovery needing judgement) and
+    WriteDocsAuthorTargetMissingMenu (missing prerequisite) are on the must-block list, so they are
+    `blocking`. Reverting any TYPE: drops the value to None, failing here and also failing
+    test_the_untyped_menu_surface_does_not_grow, so the pin bites from both directions.
+    """
+    declarations = _menu_type_declarations()
+    expected = {
+        "skills/studio/modules/ci-discovery-run.md#0::CiDiscoverySkipMenu": "confirmation",
+        "skills/studio/modules/ci-discovery-run.md#0::CiDiscoveryFailureMenu": "blocking",
+        "skills/studio/modules/write-docs-author-dispatch.md#2::WriteDocsAuthorTargetMissingMenu": "blocking",
+    }
+    for key, want in expected.items():
+        assert declarations.get(key) == want, (
+            f"{key} should declare TYPE: {want}, got {declarations.get(key)!r}")
 
 
 # Every MENU that does not yet declare a shape, frozen 2026-09-17 (issue #186).

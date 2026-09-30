@@ -26,7 +26,8 @@ RULES:
   NEVER silently fall back to inline heuristics when discovery is empty — use the failure menu
   NEVER run cf-explore in write or mutate mode
 MENU CiDiscoverySkipMenu
-TITLE: CI discovery — find relevant CI targets automatically or skip?
+TITLE: CI discovery — find relevant CI targets automatically or skip? Discovery is the default when no targets are known yet; skip to proceed without it.
+TYPE: confirmation
 OPTIONS:
   1 discover -> CONTINUE CiDiscoveryRunExecute
   2 skip -> SET CI_DISCOVERY_STATUS = skipped; CONTINUE CiDiscoveryRunClassifyResult
@@ -87,6 +88,7 @@ DO:
 
 MENU CiDiscoveryFailureMenu
 TITLE: CI discovery found no targets. Choose how to proceed.
+TYPE: blocking
 OPTIONS:
   1 retry -> SET CI_DISCOVERY_STATUS = unset; CONTINUE CiDiscoveryRunStart
   2 provide -> SET CI_TARGET_CAPTURE_STATE = resume; EMIT "Reply with the REVIEW_TARGET_PATHS you want to use (one path per line)."; WAIT user.reply; STOP_TURN
