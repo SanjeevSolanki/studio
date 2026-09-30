@@ -286,7 +286,7 @@ _ = EconomyVerdict.indeterminate
 # runs a filter (grep `ReversibilityFilter`/`ScopeFilter`/`BlockerFilter` outside gate_filters.py
 # and its tests). The algorithm is declared in architecture/features/core-infra.md (### The Gate Chain).
 from studio.utils.gate_chain import BLOCKING  # noqa: E402
-from studio.utils.gate_filters import BlockerFilter, ReversibilityFilter, ScopeFilter  # noqa: E402
+from studio.utils.gate_filters import BlockerFilter, PlanEconomyFilter, ReversibilityFilter, ScopeFilter  # noqa: E402
 _ = BLOCKING
 _ = ReversibilityFilter
 _ = ScopeFilter
@@ -299,3 +299,9 @@ _ = BlockerFilter
 # a non-test caller references it (grep `extract_declared_gate_keys` outside pdsl.py and its tests).
 from studio.utils.pdsl import extract_declared_gate_keys  # noqa: E402
 _ = extract_declared_gate_keys
+
+# PlanEconomyFilter -- the one economy filter (resolves a gate from the plan). Same status as the
+# safety filters above: built before the runtime seam that constructs a Gate and runs the chain
+# (a later increment). REMOVAL TRIGGER -- delete once that seam references it (grep
+# `PlanEconomyFilter` outside gate_filters.py and its tests).
+_ = PlanEconomyFilter

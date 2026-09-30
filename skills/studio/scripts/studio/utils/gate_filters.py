@@ -3,7 +3,11 @@
 Each is a ``SafetyFilter`` (``gate_chain``): it may only **add** a stop. It returns ``CLEAR`` when
 it sees no reason to stop, ``ADD_STOP`` when it requires one, and ``INDETERMINATE`` when it cannot
 tell -- which the chain reads as a stop, so every "cannot tell" fails **closed**. None of them
-removes a stop; that is the economy class's job, in a later increment.
+removes a stop; that is the economy filter's job, below.
+
+Alongside them is one **economy** filter -- ``PlanEconomyFilter`` -- which may only *remove* a stop,
+by resolving the gate's declared key against the approved plan. The chain runs every safety filter
+before it, and an added stop is final, so economy can never clear a stop safety required.
 
 The order the chain runs them in, and the fact an added stop is final, is the whole safety
 argument and lives in ``gate_chain.resolve_gate``; these are the individual judgements it composes.
@@ -26,8 +30,10 @@ import tomllib
 from pathlib import Path, PurePosixPath
 from typing import FrozenSet, Iterator, List
 
+from . import plan_decisions
 from .armed_reversal import armed_reversal
-from .gate_chain import Gate, SafetyVerdict
+from .decision_log import GateRuling
+from .gate_chain import EconomyVerdict, Gate, SafetyVerdict
 
 logger = logging.getLogger(__name__)
 
@@ -314,3 +320,50 @@ def _phase_frontmatter(path: Path) -> dict:
             return phase
     return {}
 # @cpt-end:cpt-studio-algo-core-infra-gate-chain:p1:inst-scope-fences
+
+
+# @cpt-begin:cpt-studio-algo-core-infra-gate-chain:p1:inst-filter-plan-economy
+class PlanEconomyFilter:  # pylint: disable=too-few-public-methods
+    """Remove a gate's stop when the approved plan already answers its declared key.
+
+    The only economy filter today. It reads **only** the gate's ``decision_key`` and ``plan_dir`` --
+    never the option wording -- so it cannot resolve a gate the author did not name, the same
+    principle the safety filters hold: no information is never permission. It handles only a plain
+    value answer: it removes the stop when the plan resolves the key to a value, and abstains
+    (``no_opinion`` -- the stop stands, so it asks) for everything else -- no key, no plan, a silent
+    plan, a conditional/policy declaration it cannot decide because it supplies no case, or a read
+    that raises. Failing safe produces *more* stops, the cautious direction. Resolving a policy
+    against a case belongs to a later increment, once a Gate carries that case.
+    """
+
+    def check(self, gate: Gate) -> EconomyVerdict:
+        """``remove`` when the plan resolves the key to a value; ``no_opinion`` to abstain otherwise."""
+        key = gate.decision_key
+        if not key:
+            return EconomyVerdict.no_opinion()   # no declared key -> nothing to look up -> ask
+        if gate.plan_dir is None:
+            return EconomyVerdict.no_opinion()   # no plan to resolve against -> ask
+        try:
+            lookup = plan_decisions.resolve(key, gate.plan_dir)
+        except Exception as exc:  # pylint: disable=broad-except
+            # A plan read that raises must not open the gate: unknown is refusal here, and a guard
+            # that stops running without saying so is worth a line.
+            logger.warning("plan economy filter: the plan lookup raised, so the gate is held "
+                           "rather than resolved: %s", type(exc).__name__)
+            return EconomyVerdict.no_opinion()
+        if lookup.resolved:
+            # Carry the ruling from the lookup's own fields -- `plan_decisions.resolve` already
+            # bounds and sanitises `decision_key` (`_bounded`: capped, non-printables stripped), so
+            # the ruling records the same key the lookup reports, never the raw author-controlled one.
+            return EconomyVerdict.remove(GateRuling(
+                decision_key=lookup.decision_key,
+                value=lookup.value,
+                provenance=lookup.provenance,
+                status=lookup.status,
+            ))
+        # Not resolved -> abstain (the stop stands, so the gate asks). This filter handles only a
+        # plain value answer: the plan being silent (`absent`) and a conditional/policy declaration
+        # it cannot decide because it supplies no case (`ambiguous`) both abstain here. Resolving a
+        # policy against a case belongs to a later increment, once a Gate carries that case.
+        return EconomyVerdict.no_opinion()
+# @cpt-end:cpt-studio-algo-core-infra-gate-chain:p1:inst-filter-plan-economy

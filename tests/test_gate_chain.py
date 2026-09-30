@@ -261,3 +261,47 @@ def test_real_filters_allow_a_resolve_when_all_clear() -> None:
         [_Economy(EconomyVerdict.remove(_RULING))],
     )
     assert out.kind is OutcomeKind.RESOLVE
+
+
+def _plan_with(tmp_path, *, key: str, value: str):
+    (tmp_path / "plan.toml").write_text(
+        f'[plan]\ntask="x"\n\n[[gate_decisions]]\nkey="{key}"\nvalue="{value}"\n', encoding="utf-8"
+    )
+    return tmp_path
+
+
+def test_a_plan_answered_gate_still_asks_when_a_safety_filter_stops_it(tmp_path) -> None:
+    # The load-bearing invariant with the REAL economy filter: safety runs first and is final, so a
+    # safety-added stop means ASK even though the plan answers the gate -- economy is never consulted.
+    from studio.utils.gate_filters import PlanEconomyFilter  # noqa: PLC0415
+    out = resolve_gate(
+        Gate(decision_key="k", plan_dir=_plan_with(tmp_path, key="k", value="v")),
+        CONFIRMATION,
+        [_Safety(SafetyVerdict.ADD_STOP)],
+        [PlanEconomyFilter()],
+    )
+    assert out.kind is OutcomeKind.ASK
+
+
+def test_a_blocking_gate_never_resolves_from_the_plan(tmp_path) -> None:
+    from studio.utils.gate_filters import PlanEconomyFilter  # noqa: PLC0415
+    out = resolve_gate(
+        Gate(decision_key="k", plan_dir=_plan_with(tmp_path, key="k", value="v")),
+        BLOCKING,
+        [_Safety(SafetyVerdict.CLEAR)],
+        [PlanEconomyFilter()],
+    )
+    assert out.kind is OutcomeKind.ASK
+
+
+def test_a_plan_answered_gate_resolves_end_to_end_when_safety_is_clear(tmp_path) -> None:
+    from studio.utils.gate_filters import PlanEconomyFilter  # noqa: PLC0415
+    out = resolve_gate(
+        Gate(decision_key="k", plan_dir=_plan_with(tmp_path, key="k", value="v")),
+        CONFIRMATION,
+        [_Safety(SafetyVerdict.CLEAR)],
+        [PlanEconomyFilter()],
+    )
+    assert out.kind is OutcomeKind.RESOLVE
+    assert out.ruling.provenance == "plan"
+    assert out.ruling.value == "v"
