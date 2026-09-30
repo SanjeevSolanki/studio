@@ -848,6 +848,147 @@ def test_a_deeply_indented_menu_shape_is_nested_body_not_a_declaration() -> None
     assert _rule_ids(deep_but_in_region) == []
 
 
+def test_gate_key_accepts_a_declared_identifier_in_both_menu_shapes() -> None:
+    """A snake_case KEY is recognized, indented or at column 0 (#327)."""
+    for indent in ("  ", ""):
+        for key in ("deploy_target", "k", "plan_next_action", "a1_b2"):
+            assert _rule_ids(_gate_menu(extra=f"KEY: {key}", indent=indent)) == [], (indent, key)
+
+
+def test_gate_key_absent_is_valid() -> None:
+    """Absence is never an error: an undeclared gate simply cannot be answered from
+    the plan, so its stop stands. This is what lets keys migrate gate by gate."""
+    for indent in ("  ", ""):
+        assert _rule_ids(_gate_menu(indent=indent)) == [], indent
+    assert _rule_ids(_gate_menu(extra="NOTE: choose 1 to keep going")) == []
+
+
+def test_gate_key_must_be_a_snake_case_identifier() -> None:
+    """Each probe fails exactly once with PDSL720: KEY is a bare snake_case name."""
+    for value in (
+        "Deploy_Target",       # uppercase letter
+        "deploy-target",       # hyphen
+        "1deploy",             # starts with a digit
+        "deploy.target",       # dotted (rejected: clashes with TOML)
+        "{DECISION_KEY}",      # interpolation
+        "deploy_target WHEN SIMPLE_MODE == normal",  # trailing condition
+        "deploy target",       # space
+    ):
+        assert _rule_ids(_gate_menu(extra=f"KEY: {value}")) == ["PDSL720"], value
+
+    # A bare `KEY:` with no value declares nothing but is still a declaration.
+    assert _rule_ids(_gate_menu(extra="KEY:")) == ["PDSL720"]
+
+
+def test_gate_key_is_rejected_twice_in_one_menu() -> None:
+    """Two declarations make the effective key depend on read order."""
+    text = _gate_menu(extra="KEY: deploy_target").replace(
+        "  KEY: deploy_target", "  KEY: deploy_target\n  KEY: other_key", 1)
+    findings = validate_source(PdslSource("double.md", text)).findings
+    assert [f.rule_id for f in findings] == ["PDSL721"]
+    assert "more than once" in findings[0].message
+
+
+def test_gate_key_is_reported_where_nothing_reads_it() -> None:
+    """A declaration outside a MENU, or nested in its body, is inert (PDSL722)."""
+    outside = "UNIT Demo\n\nPURPOSE:\n  Do a thing.\n\nKEY: deploy_target\n\nDO:\n  - RUN Something\n"
+    assert _rule_ids(outside) == ["PDSL722"]
+
+    assert _rule_ids(_gate_menu(tail="NOTES:\n  KEY: deploy_target\n")) == ["PDSL722"]
+
+    nested = (
+        "MENU G:\n  TITLE: t\n  OPTIONS:\n"
+        "    1 x -> CONTINUE CurrentWorkflow\n      KEY: deploy_target\n"
+    )
+    assert _rule_ids(nested) == ["PDSL722"]
+
+
+def test_a_malformed_gate_key_header_is_reported() -> None:
+    """A near-miss of KEY must not silently leave a gate keyless (PDSL723)."""
+    for variant in (
+        "KE: deploy_target",          # deletion
+        "KEYS: deploy_target",        # insertion
+        "KYE: deploy_target",         # transposition
+        "- KEY: deploy_target",       # bulleted
+        "`KEY: deploy_target`",       # decorated
+        "KEY = deploy_target",        # separator PDSL does not use
+        # rejected alternatives (aliases)
+        "ID: deploy_target",
+        "DECISION_KEY: deploy_target",
+        "GATE_KEY: deploy_target",
+        "RESOLVE_KEY: deploy_target",
+        "KEY_ID: deploy_target",
+    ):
+        assert _rule_ids(_gate_menu(extra=variant)) == ["PDSL723"], variant
+
+
+def test_a_miscased_key_header_is_read_by_its_value() -> None:
+    """The KEY analogue of TYPE/SHAPE's miscasing rule: a lower- or mixed-case `key:`
+    is reported when its value looks like a key (a bare snake_case identifier) -- the
+    common capitalisation typo -- and stays prose when its value is ordinary text.
+    `KEY` having no closed token set is why the value's *shape* stands in for it."""
+    for miscased in ("key: deploy_target", "Key: deploy_target", "key: plan_next_action"):
+        assert _rule_ids(_gate_menu(extra=miscased)) == ["PDSL723"], miscased
+
+    for benign in ("key: the deploy target", "key: choose one to keep going", "keys: three of them"):
+        assert _rule_ids(_gate_menu(extra=benign)) == [], benign
+
+
+def test_gate_key_near_miss_does_not_cross_fire_with_type_or_shape() -> None:
+    """A near-miss of KEY is PDSL723, never mistaken for a TYPE or SHAPE near-miss."""
+    assert _rule_ids(_gate_menu(extra="KEYS: deploy_target")) == ["PDSL723"]
+    assert _rule_ids(_gate_menu(extra="TYP: blocking")) == ["PDSL703"]
+    assert _rule_ids(_gate_menu(extra="SHAP: fixed-choice")) == ["PDSL713"]
+
+
+def test_type_shape_and_key_declare_and_fail_independently() -> None:
+    """TYPE, SHAPE and KEY share one declaration region but are otherwise unrelated.
+
+    A bad value in one must not suppress a finding in another, and a valid trio is
+    an error-free menu.
+    """
+    all_good = _gate_menu(declared="decision", extra="SHAPE: fixed-choice\n  KEY: deploy_target")
+    assert _rule_ids(all_good) == []
+
+    bad_key_only = _gate_menu(declared="decision", extra="SHAPE: fixed-choice\n  KEY: Bad-Key")
+    assert _rule_ids(bad_key_only) == ["PDSL720"]
+
+
+def test_all_orderings_of_type_shape_key_share_one_region() -> None:
+    """The three declarations may appear in any order without any ending the others'
+    region (PDSL.md "declared gate key"): assert all six orderings validate clean, and
+    that a fourth recognized section (OPTIONS) still ends the region regardless."""
+    import itertools  # noqa: PLC0415
+    decls = ["TYPE: decision", "SHAPE: fixed-choice", "KEY: deploy_target"]
+    for ordering in itertools.permutations(decls):
+        body = "".join(f"  {d}\n" for d in ordering)
+        text = f"MENU G:\n  TITLE: t\n{body}  OPTIONS:\n    1 a -> CONTINUE X\n"
+        assert _rule_ids(text) == [], ordering
+
+    # OPTIONS (a section that is not TITLE/TYPE/SHAPE/KEY) ends the region, so a KEY
+    # after it is out of scope even though the three declarations preceded it.
+    after_options = (
+        "MENU G:\n  TITLE: t\n  TYPE: decision\n  OPTIONS:\n"
+        "    1 a -> CONTINUE X\n  KEY: deploy_target\n"
+    )
+    assert _rule_ids(after_options) == ["PDSL722"]
+
+
+def test_a_deeply_indented_gate_key_is_nested_body_not_a_declaration() -> None:
+    """A KEY indented deeper than the menu's first sub-header is continuation text,
+    not a declaration; indentation alone, while still in the region, is not a defect."""
+    nested_invalid = (
+        "MENU G:\n  OPTIONS:\n    1 a -> CONTINUE X\n"
+        "  INVALID:\n    TITLE: retry?\n    KEY: deploy_target\n"
+    )
+    assert _rule_ids(nested_invalid) == ["PDSL722"]
+
+    deep_but_in_region = (
+        "MENU G:\n  TITLE: t\n              KEY: deploy_target\n  OPTIONS:\n    1 a -> CONTINUE X\n"
+    )
+    assert _rule_ids(deep_but_in_region) == []
+
+
 def test_gate_rules_apply_to_every_menu_in_a_block_not_only_the_last() -> None:
     """Per-menu state must reset at each MENU boundary and not leak across it."""
     good_then_bad = _gate_menu(declared="blocking", name="First") + "\n" + _gate_menu(
@@ -935,6 +1076,11 @@ _GATE_FINDINGS = ("PDSL700", "PDSL701", "PDSL702", "PDSL703")
 #: narrower `PDSL70\d` pattern, so that a rule added anywhere in the band still fails the
 #: assertion below until somebody says which of the two it belongs to.
 _MENU_SHAPE_FINDINGS = ("PDSL710", "PDSL711", "PDSL712", "PDSL713")
+#: The `KEY` rules (#327), which share the `PDSL700` band but a third subject:
+#: the declared plan key a gate is answered by, neither the risk it carries nor how it
+#: collects a reply. Named for the same reason as the two above -- a new rule in the band
+#: must be assigned before the classification assertion passes.
+_GATE_KEY_FINDINGS = ("PDSL720", "PDSL721", "PDSL722", "PDSL723")
 
 
 def test_every_rule_in_the_band_is_classified() -> None:
@@ -973,14 +1119,18 @@ def test_every_rule_in_the_band_is_classified() -> None:
     emitted = set(re.findall(r'"(PDSL7\d\d)"', source))
     assert emitted, "no PDSL700-band rule ids found; this guard has lost its subject"
 
-    overlap = set(_GATE_FINDINGS) & set(_MENU_SHAPE_FINDINGS)
-    assert not overlap, f"a rule is claimed by both filters: {sorted(overlap)}"
+    filters = (set(_GATE_FINDINGS), set(_MENU_SHAPE_FINDINGS), set(_GATE_KEY_FINDINGS))
+    for left in range(len(filters)):
+        for right in range(left + 1, len(filters)):
+            overlap = filters[left] & filters[right]
+            assert not overlap, f"a rule is claimed by more than one filter: {sorted(overlap)}"
 
-    unclaimed = sorted(emitted - set(_GATE_FINDINGS) - set(_MENU_SHAPE_FINDINGS))
+    unclaimed = sorted(emitted - set().union(*filters))
     assert not unclaimed, (
         f"rules emitted in the PDSL700 band that no filter claims: {unclaimed}. Add each to "
-        "_GATE_FINDINGS if it describes the risk a gate carries, or to "
-        "_MENU_SHAPE_FINDINGS if it describes how a menu collects a reply."
+        "_GATE_FINDINGS if it describes the risk a gate carries, _MENU_SHAPE_FINDINGS if it "
+        "describes how a menu collects a reply, or _GATE_KEY_FINDINGS if it describes the plan "
+        "key a gate is answered by."
     )
 
 
