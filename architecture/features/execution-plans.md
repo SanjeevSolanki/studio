@@ -463,6 +463,32 @@ The system MUST store execution plans in `{cf-studio-path}/.plans/{task-slug}/` 
 - `input/` — authoritative raw-input package when oversized workflow input was materialized (`manifest.json`, optional `direct-prompt.md`, plus numbered chunk files)
 - `phase-{NN}-{slug}.md` — self-contained phase files
 
+The manifest MAY also carry a `[[gate_decisions]]` array — the author-facing counterpart of a
+menu's declared `KEY:`. Each entry's `key` is selected by exact string equality (see *Resolve a
+Decision From the Plan*), so it uses the same snake_case shape a `KEY:` declaration does — never a
+dotted or hyphenated form, which no `KEY:` can name and so nothing would ever match. A decision
+pre-resolved for a human in a phase file's *Already Decided* list is made resolvable from the plan
+by a matching entry here, so a gate that declares that key can resolve against the plan instead of
+re-asking:
+
+```toml
+[[gate_decisions]]
+key = "runtime_base_image"
+value = "ubuntu-24.04"
+```
+
+A policy entry names the enum dimension the plan resolves it through and the row table, rather than
+a single `value`:
+
+```toml
+[[gate_decisions]]
+key = "review_follow_up_depth"
+dimension = "register.classification"
+[gate_decisions.policy]
+serious = "full-review"
+normal = "spot-check"
+```
+
 **Implements**:
 - `cpt-studio-flow-execution-plans-chunk-raw-input`
 - `cpt-studio-flow-execution-plans-generate-plan`

@@ -143,6 +143,11 @@ Use this structure:
 - [ ] **{Input needed}** — ask user for specific info
 ```
 
+> When a pre-resolved decision answers a gate's declared `KEY:`, also record it as a matching
+> `[[gate_decisions]]` entry in the plan's `plan.toml` manifest (see
+> `architecture/features/execution-plans.md` → Plan Storage), so the gate resolves from the plan
+> instead of re-asking. The entry's `key` uses the same snake_case shape as the `KEY:`.
+
 ```pdsl
 UNIT PhaseFileUserDecisionsRules
 

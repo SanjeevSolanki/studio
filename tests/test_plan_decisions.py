@@ -19,6 +19,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills/studio/scripts"))
 
+from studio.utils import pdsl  # noqa: E402
 from studio.utils import plan_decisions as pd  # noqa: E402
 
 
@@ -990,3 +991,70 @@ minor = "none"
             body = f'[[phases]]\nnumber = 1\nneeds = ["{huge}"]\n'
             measured = pd.preflight(_plan(tmp_path, body))[0].blocked_on[0][0]
         assert len(measured) < 2_000, (field, len(measured))
+
+
+# The author-facing `[[gate_decisions]]` schema is documented in the plan feature spec. These
+# tests bind that documentation to the real resolver, so an example that drifts from what the
+# parser accepts -- or a key written in a shape no `KEY:` could declare -- fails here rather than
+# silently shipping an un-resolvable example.
+_PLAN_SPEC = Path(__file__).resolve().parents[1] / "architecture/features/execution-plans.md"
+
+# The KEY: grammar itself -- the single authority for what a declared gate key may look like -- so a
+# documented key that no KEY: could name is caught against the real regex, not a copy that could drift.
+_KEY_GRAMMAR = pdsl.MENU_KEY_SYNTAX_RE
+
+
+def _documented_gate_decision_blocks() -> list:
+    """Every ```toml fenced block in the plan spec that declares a gate decision."""
+    text = _PLAN_SPEC.read_text(encoding="utf-8")
+    return [b for b in re.findall(r"```toml\n(.*?)```", text, re.DOTALL) if "[[gate_decisions]]" in b]
+
+
+class TestTheDocumentedGateDecisionsExampleIsResolvable:
+    """The plan spec's `[[gate_decisions]]` example must resolve through the real parser."""
+
+    def test_the_value_form_example_resolves_to_its_documented_value(self, tmp_path: Path) -> None:
+        blocks = _documented_gate_decision_blocks()
+        assert blocks, "the plan spec documents no [[gate_decisions]] example"
+        value_form = [b for b in blocks if "value = " in b and "[gate_decisions.policy]" not in b]
+        assert value_form, "the plan spec documents no value-form gate decision"
+        block = value_form[0]
+        key_match = re.search(r'key\s*=\s*"([^"]+)"', block)
+        value_match = re.search(r'value\s*=\s*"([^"]+)"', block)
+        assert key_match, "the value-form example is missing a key"
+        assert value_match, "the value-form example is missing a value"
+        key, value = key_match.group(1), value_match.group(1)
+        body = '[plan]\ntask = "demo"\n\n' + block
+        found = pd.resolve(key, _plan(tmp_path, body))
+        assert found.resolved, f"documented key {key!r} did not resolve"
+        assert found.value == value
+
+    def test_the_policy_form_example_resolves_through_its_named_dimension(
+        self, tmp_path: Path
+    ) -> None:
+        policy_form = [b for b in _documented_gate_decision_blocks() if "[gate_decisions.policy]" in b]
+        assert policy_form, "the plan spec documents no policy-form gate decision"
+        block = policy_form[0]
+        key_match = re.search(r'key\s*=\s*"([^"]+)"', block)
+        assert key_match, "the policy-form example is missing a key"
+        rows = block.split("[gate_decisions.policy]", 1)[1]
+        row_match = re.search(r'^(\w+)\s*=\s*"([^"]+)"', rows, re.MULTILINE)
+        assert row_match, "the policy-form example declares no rows"
+        case, expected = row_match.group(1), row_match.group(2)
+        body = '[plan]\ntask = "demo"\n\n' + block
+        found = pd.resolve(key_match.group(1), _plan(tmp_path, body), case=case)
+        assert found.resolved, f"documented policy key did not resolve for case {case!r}"
+        assert found.value == expected
+
+    def test_every_documented_key_is_key_grammar_snake_case(self) -> None:
+        keys = [
+            m
+            for block in _documented_gate_decision_blocks()
+            for m in re.findall(r'^\s*key\s*=\s*"([^"]+)"', block, re.MULTILINE)
+        ]
+        assert keys, "the plan spec documents no gate-decision keys"
+        for key in keys:
+            assert _KEY_GRAMMAR.match(key), (
+                f"documented gate_decisions key {key!r} is not snake_case; no KEY: could declare "
+                f"it, so exact-match resolution could never reach it"
+            )
