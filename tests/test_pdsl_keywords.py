@@ -1104,7 +1104,7 @@ UNTYPED_MENU_BASELINE: frozenset[str] = frozenset({
     "skills/studio/modules/plan-validate-finalize.md#0::OversizedPhaseRecoveryMenu",
     "skills/studio/modules/plan-validate-finalize.md#1::Phase4NextStepsMenu",
     "skills/studio/modules/planning-runtime.md#8::PlanSaveGateMenu",
-    "skills/studio/modules/review/fix-approval.md#12::ReviewFixPartialIdsRetryMenu",
+    "skills/studio/modules/review/fix-approval.md#13::ReviewFixPartialIdsRetryMenu",
     "skills/studio/modules/review/semantic-loop-skeleton.md#0::ReviewGranularityMenu",
     "skills/studio/modules/routing/companion-skills.md#1::CompanionSkillOfferMenu",
     "skills/studio/modules/routing/companion-skills.md#2::CompanionRoutingMenuOptions",
@@ -1584,7 +1584,7 @@ UNSHAPED_MENU_BASELINE_BY_FILE: dict[str, frozenset[str]] = {
     }),
     "skills/studio/modules/planning-runtime.md": frozenset({"8::PlanSaveGateMenu"}),
     "skills/studio/modules/review/fix-approval.md": frozenset({
-        "0::ReviewFindingsNavigation", "12::ReviewFixPartialIdsRetryMenu", "3::ReviewFixScope",
+        "0::ReviewFindingsNavigation", "13::ReviewFixPartialIdsRetryMenu", "3::ReviewFixScope",
     }),
     "skills/studio/modules/review/semantic-loop-skeleton.md": frozenset({"0::ReviewGranularityMenu"}),
     "skills/studio/modules/routing/companion-skills.md": frozenset({

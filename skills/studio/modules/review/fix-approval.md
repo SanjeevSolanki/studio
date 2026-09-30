@@ -78,6 +78,7 @@ STATE:
   SET REVIEW_FIX_SCOPE: critical-major | all | partial | none | unset (default unset, scope workflow_run)
   SET REVIEW_FIX_APPROVED: true | false | unset (default unset, scope workflow_run)
   SET APPROVED_REVIEW_FINDING_IDS: list | all-critical-major | all | empty (default empty, scope workflow_run)
+  SET REVIEW_FIX_BROAD_REQUEST: critical-major | all | unset (default unset, scope workflow_run)
   SET REVIEW_FIX_MENU_TOKEN: ready | unset (default unset, scope workflow_run)
   SET REVIEW_FIX_MENU_REPORT: current | unset (default unset, scope workflow_run)
   SET REVIEW_FINDINGS_BROWSER_CONFIRMED: true | false | unset (default unset, scope workflow_run)
@@ -98,20 +99,54 @@ RULES:
   ALWAYS offer the fix-scope options: only CRITICAL and MAJOR findings, all findings, or a user-selected partial subset
   ALWAYS include a browser option in ReviewFixScope so the user can return from fix approval to the findings browser without applying fixes
   ALWAYS set REVIEW_FIX_SCOPE and REVIEW_FIX_APPROVED from the resolved menu option before returning control to the calling review loop
+  ALWAYS route a broad scope (critical + major, or all) chosen while SELECTED_FINDING_IDS is non-empty through ReviewFixMarkedOverrideConfirm, so a marked subset is never discarded without an explicit choice
   ALWAYS clear REVIEW_FIX_MENU_TOKEN and REVIEW_FIX_MENU_REPORT after ReviewFixApprovalGate resolves
   ALWAYS treat REVIEW_FIX_SCOPE == none and REVIEW_FIX_APPROVED == false as "no fixes approved" and let the calling review loop report the remaining findings
   NEVER present ReviewFixScope as a short findings table plus fix choices; the findings table belongs only to ReviewFindingsReportBrowser table view
   NEVER apply review fixes without explicit user approval of the chosen scope
 MENU ReviewFixScope
-TITLE: Review found issues — what should I fix? Inject live counts before emitting: "N CRITICAL/MAJOR and M MINOR findings — nothing is changed until you choose."
+TITLE: Review found issues — what should I fix? Inject live counts before emitting: "N CRITICAL/MAJOR and M MINOR findings — nothing is changed until you choose." When SELECTED_FINDING_IDS is non-empty, also state the marked count and that options 1 and 2 will ask before discarding the marked subset.
 TYPE: blocking
 OPTIONS:
-  1 critical + major only — fix the N highest-severity findings, then re-review (suggested when CRITICAL or MAJOR findings exist) -> CONTINUE ReviewFixScopeApproveCriticalMajor
-  2 all findings — fix all N+M findings including MINOR -> CONTINUE ReviewFixScopeApproveAll
-  3 select specific — choose individual findings by ID or browser selection -> SET REVIEW_FIX_SCOPE = partial; SET REVIEW_FIX_APPROVED = true; CONTINUE ReviewFixPartialScopeResolve
-  4 back to browser — review findings again before deciding -> SET REVIEW_FIX_MENU_TOKEN = unset; SET REVIEW_FIX_MENU_REPORT = unset; CONTINUE ReviewFindingsReportBrowser
+  1 critical + major only — fix the N highest-severity findings, then re-review (suggested when CRITICAL or MAJOR findings exist) -> SET REVIEW_FIX_BROAD_REQUEST = critical-major; CONTINUE ReviewFixScopeApproveCriticalMajor WHEN SELECTED_FINDING_IDS == empty; CONTINUE ReviewFixMarkedOverrideConfirm WHEN SELECTED_FINDING_IDS != empty
+  2 all findings — fix all N+M findings including MINOR -> SET REVIEW_FIX_BROAD_REQUEST = all; CONTINUE ReviewFixScopeApproveAll WHEN SELECTED_FINDING_IDS == empty; CONTINUE ReviewFixMarkedOverrideConfirm WHEN SELECTED_FINDING_IDS != empty
+  3 select specific — fix the findings you marked in the browser, or enter IDs -> SET REVIEW_FIX_SCOPE = partial; SET REVIEW_FIX_APPROVED = true; CONTINUE ReviewFixPartialScopeResolve
+  4 back to browser — review findings again before deciding -> SET REVIEW_FIX_MENU_TOKEN = unset; SET REVIEW_FIX_MENU_REPORT = unset; SET REVIEW_FINDINGS_BROWSER_ENTRY = rerender; CONTINUE ReviewFindingsReportBrowser
   5 skip fixes — close without applying any fixes -> CONTINUE ReviewFixScopeApproveNone
   INVALID -> EMIT_MENU ReviewFixScope
+```
+
+```pdsl
+UNIT ReviewFixMarkedOverrideConfirm
+PURPOSE: When a broad fix scope is chosen but findings are marked, confirm before discarding the marked subset.
+STATE:
+  SET SELECTED_FINDING_IDS: list | empty (default empty, scope workflow_run)
+  SET REVIEW_FIX_SCOPE: critical-major | all | partial | none | unset (default unset, scope workflow_run)
+  SET REVIEW_FIX_APPROVED: true | false | unset (default unset, scope workflow_run)
+  SET REVIEW_FIX_BROAD_REQUEST: critical-major | all | unset (default unset, scope workflow_run)
+  SET REVIEW_FIX_MENU_TOKEN: ready | unset (default unset, scope workflow_run)
+  SET REVIEW_FIX_MENU_REPORT: current | unset (default unset, scope workflow_run)
+WHEN:
+  REQUIRE REVIEW_FIX_BROAD_REQUEST == critical-major OR REVIEW_FIX_BROAD_REQUEST == all
+  REQUIRE SELECTED_FINDING_IDS != empty
+  REQUIRE REVIEW_FIX_MENU_TOKEN == ready
+  REQUIRE REVIEW_FIX_MENU_REPORT == current
+DO:
+  EMIT_MENU ReviewFixMarkedOverride
+  WAIT user.reply
+  STOP_TURN
+RULES:
+  ALWAYS state how many findings are marked and which broader set the chosen option would fix instead
+  NEVER discard the marked subset or apply the broader scope without an explicit choice on this menu
+MENU ReviewFixMarkedOverride
+TITLE: You marked findings but chose a broader scope. Inject the marked count K and name the chosen broad scope (critical + major, or all) before emitting: "You marked K finding(s); the option you chose would fix that broader set instead. Nothing is changed until you choose."
+TYPE: blocking
+SHAPE: fixed-choice
+OPTIONS:
+  1 fix only my marked findings — honour the K findings I selected -> SET REVIEW_FIX_SCOPE = partial; SET REVIEW_FIX_APPROVED = true; SET REVIEW_FIX_BROAD_REQUEST = unset; CONTINUE ReviewFixPartialScopeResolve
+  2 discard my marks and fix the broader set — apply the scope I first chose instead -> SET SELECTED_FINDING_IDS = empty; CONTINUE ReviewFixScopeApproveCriticalMajor WHEN REVIEW_FIX_BROAD_REQUEST == critical-major; CONTINUE ReviewFixScopeApproveAll WHEN REVIEW_FIX_BROAD_REQUEST == all
+  3 back — return to the fix-scope choices -> SET REVIEW_FIX_BROAD_REQUEST = unset; CONTINUE ReviewFixApprovalGate
+  INVALID -> EMIT_MENU ReviewFixMarkedOverride
 ```
 
 ```pdsl
@@ -121,6 +156,7 @@ DO:
   SET REVIEW_FIX_SCOPE = critical-major
   SET REVIEW_FIX_APPROVED = true
   SET APPROVED_REVIEW_FINDING_IDS = all-critical-major
+  SET REVIEW_FIX_BROAD_REQUEST = unset
   SET REVIEW_FIX_MENU_TOKEN = unset
   SET REVIEW_FIX_MENU_REPORT = unset
   RETURN to the calling review loop to fix only CRITICAL and MAJOR findings, then re-review
@@ -133,6 +169,7 @@ DO:
   SET REVIEW_FIX_SCOPE = all
   SET REVIEW_FIX_APPROVED = true
   SET APPROVED_REVIEW_FINDING_IDS = all
+  SET REVIEW_FIX_BROAD_REQUEST = unset
   SET REVIEW_FIX_MENU_TOKEN = unset
   SET REVIEW_FIX_MENU_REPORT = unset
   RETURN to the calling review loop to fix all findings, then re-review
@@ -266,6 +303,7 @@ WHEN:
   REQUIRE REVIEW_FIX_MENU_REPORT == current
 DO:
   SET PARTIAL_IDS_CAPTURE_STATE = unset WHEN user.reply == "back"
+  SET REVIEW_FINDINGS_BROWSER_ENTRY = rerender WHEN user.reply == "back"
   CONTINUE ReviewFindingsReportBrowser WHEN user.reply == "back"
   CONTINUE ReviewFixPartialIdsRetry WHEN user.reply is empty OR user.reply names no finding IDs from the active ReviewFindingsReport
   CONTINUE ReviewFixPartialIdsReturn WHEN user.reply names one or more finding IDs from the active ReviewFindingsReport
@@ -286,7 +324,7 @@ MENU ReviewFixPartialIdsRetryMenu
 TITLE: No valid finding IDs were recognised — how do you want to proceed?
 OPTIONS:
   1 retry — enter IDs again (format: F-001 F-003, separated by spaces or commas) -> CONTINUE ReviewFixPartialIdsValidate
-  2 browser — return to the findings browser to check IDs -> SET PARTIAL_IDS_CAPTURE_STATE = unset; SET REVIEW_FIX_MENU_TOKEN = unset; SET REVIEW_FIX_MENU_REPORT = unset; CONTINUE ReviewFindingsReportBrowser
+  2 browser — return to the findings browser to check IDs -> SET PARTIAL_IDS_CAPTURE_STATE = unset; SET REVIEW_FIX_MENU_TOKEN = unset; SET REVIEW_FIX_MENU_REPORT = unset; SET REVIEW_FINDINGS_BROWSER_ENTRY = rerender; CONTINUE ReviewFindingsReportBrowser
   3 back — return to the fix-scope menu -> SET PARTIAL_IDS_CAPTURE_STATE = unset; SET REVIEW_FIX_SCOPE = unset; SET REVIEW_FIX_APPROVED = unset; CONTINUE ReviewFixApprovalGate
   INVALID -> EMIT_MENU ReviewFixPartialIdsRetryMenu
 ```
