@@ -3614,3 +3614,64 @@ def test_the_two_fallback_gates_are_declared_confirmation() -> None:
         assert declared.get(menu) == "confirmation", (
             f"{menu} is declared {declared.get(menu, '(nothing)')}"
         )
+
+
+def test_extract_declared_gate_keys_captures_menu_key_and_line() -> None:
+    # Two menus in one block: the extractor must capture each key with its own menu and line,
+    # not collapse to the last menu (block state is reused across menus).
+    source = (
+        "```pdsl\n"
+        "UNIT Demo\n"          # line 2
+        "MENU AlphaMenu\n"      # 3
+        "TITLE: Pick\n"         # 4
+        "KEY: deploy_target\n"  # 5
+        "OPTIONS:\n"
+        "  1 go -> CONTINUE X\n"
+        "MENU BetaMenu\n"       # 8
+        "TITLE: Pick2\n"        # 9
+        "KEY: review_depth\n"   # 10
+        "OPTIONS:\n"
+        "  1 go -> CONTINUE Y\n"
+        "```\n"
+    )
+    keys = pdsl.extract_declared_gate_keys("demo.md", source)
+    assert [(k.menu, k.key, k.line) for k in keys] == [
+        ("AlphaMenu", "deploy_target", 5),
+        ("BetaMenu", "review_depth", 10),
+    ]
+
+
+def test_extract_declared_gate_keys_skips_a_rejected_key() -> None:
+    # A malformed KEY (rejected by the grammar) is a finding, not a declared key -- it must not
+    # be surfaced for the uniqueness index, or a typo'd key would collide with nothing meaningful.
+    source = (
+        "```pdsl\n"
+        "UNIT Demo\n"
+        "MENU AlphaMenu\n"
+        "TITLE: Pick\n"
+        "KEY: Not-Snake-Case\n"
+        "OPTIONS:\n"
+        "  1 go -> CONTINUE X\n"
+        "```\n"
+    )
+    assert pdsl.extract_declared_gate_keys("demo.md", source) == ()
+
+
+def test_no_gate_key_is_declared_at_more_than_one_site() -> None:
+    """A declared gate `KEY:` must be unique across the authored corpus.
+
+    A key resolves a plan decision by exact match, so two menus sharing a key would both
+    claim the same answer. Per-menu duplicates are caught by PDSL721; this is the cross-file
+    guard, run over the same authored `workflows/` + `skills/` tree every other scan in this
+    file uses -- the only place the menu files are actually read in CI (`cfs validate` does
+    not see them).
+    """
+    sites = defaultdict(list)
+    for rel, text in _authored_sources():
+        for declared in pdsl.extract_declared_gate_keys(rel, text):
+            sites[declared.key].append(f"{rel}:{declared.line} ({declared.menu})")
+    duplicates = {key: locs for key, locs in sites.items() if len(locs) > 1}
+    assert not duplicates, (
+        "these declared gate keys are each used at more than one site; a key must be unique "
+        f"so a plan resolves exactly one gate: {duplicates}"
+    )

@@ -1897,3 +1897,13 @@ def test_the_do_cap_stays_per_unit() -> None:
 
     assert "PDSL600" in ids
     assert rc == 2, "a finding must map to 2, not 1"
+
+
+def test_declared_keys_reach_the_cli_json_envelope() -> None:
+    # A declared KEY: must appear in the CLI --json output via to_dict() -> build_envelope(),
+    # matching the source-result Output shape the feature doc promises (raised in review on #390).
+    source = _gate_menu(declared="decision", extra="KEY: deploy_target")
+    rc, stdout, stderr = _run(["pdsl", "validate", "--text", source, "--json"])
+    assert rc == 0, stderr
+    result = json.loads(stdout)["results"][0]
+    assert [k["key"] for k in result["declared_keys"]] == ["deploy_target"]

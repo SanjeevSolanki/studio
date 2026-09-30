@@ -291,3 +291,11 @@ _ = BLOCKING
 _ = ReversibilityFilter
 _ = ScopeFilter
 _ = BlockerFilter
+
+# extract_declared_gate_keys -- surfaces a source's declared gate keys so a corpus-level check can
+# enforce cross-file KEY uniqueness. Its only caller today is the uniqueness guard in
+# tests/test_pdsl_keywords.py (a corpus test, since `cfs validate` never parses PDSL and the menu
+# files are read there); a CLI/runtime consumer is a later increment. REMOVAL TRIGGER -- delete once
+# a non-test caller references it (grep `extract_declared_gate_keys` outside pdsl.py and its tests).
+from studio.utils.pdsl import extract_declared_gate_keys  # noqa: E402
+_ = extract_declared_gate_keys
