@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Tuple
 
@@ -84,6 +84,21 @@ class PdslError:
 
 
 @dataclass(frozen=True)
+class DeclaredGateKey:
+    """One `KEY:` declaration found in a PDSL source: the menu, the key, the line.
+
+    Surfaced so a corpus-level caller can check keys for cross-file uniqueness
+    without re-parsing PDSL itself -- the value is captured by the same validator
+    that enforces the per-menu `KEY:` rules, so the two can never disagree on what
+    a valid declared key is.
+    """
+
+    menu: str
+    key: str
+    line: int
+
+
+@dataclass(frozen=True)
 class PdslSourceResult:
     """Validation result for one PDSL source."""
 
@@ -91,6 +106,7 @@ class PdslSourceResult:
     status: str
     findings: Tuple[PdslFinding, ...]
     errors: Tuple[PdslError, ...]
+    declared_keys: Tuple[DeclaredGateKey, ...] = ()
 
     def to_dict(self, *, verbose: bool = False) -> Dict[str, object]:
         """Return a serializable dictionary representation."""
@@ -99,6 +115,9 @@ class PdslSourceResult:
             "status": self.status,
             "findings": [finding.to_dict(verbose=verbose) for finding in self.findings],
             "errors": [error.to_dict() for error in self.errors],
+            "declared_keys": [
+                {"menu": key.menu, "key": key.key, "line": key.line} for key in self.declared_keys
+            ],
         }
 
 
@@ -123,6 +142,7 @@ class _BlockValidationState:
     menu_type_line: int = 0
     menu_shape_line: int = 0
     menu_key_line: int = 0
+    declared_keys: List[DeclaredGateKey] = field(default_factory=list)
     gate_scope: bool = False
     sub_header_indent: Optional[int] = None
 
@@ -381,9 +401,12 @@ def validate_source(source: PdslSource, *, verbose: bool = False) -> PdslSourceR
     del verbose  # Reserved for compatibility with callers; rendering applies verbosity.
     blocks, scan_findings = scan_blocks(source.source, source.text)
     findings: List[PdslFinding] = list(scan_findings)
+    declared_keys: List[DeclaredGateKey] = []
 # @cpt-begin:cpt-studio-algo-pdsl-validation-cli-helper-validate:p1:inst-parse-block
     for block in blocks:
-        findings.extend(_validate_block(block))
+        block_findings, block_keys = _validate_block(block)
+        findings.extend(block_findings)
+        declared_keys.extend(block_keys)
 # @cpt-end:cpt-studio-algo-pdsl-validation-cli-helper-validate:p1:inst-parse-block
 # @cpt-end:cpt-studio-algo-pdsl-validation-cli-helper-validate:p1:inst-foreach-block
     errors: Tuple[PdslError, ...] = ()
@@ -396,14 +419,14 @@ def validate_source(source: PdslSource, *, verbose: bool = False) -> PdslSourceR
     if findings:
         fail_findings = tuple(findings)
         # @cpt-begin:cpt-studio-algo-pdsl-validation-cli-helper-validate:p1:inst-return-source-fail
-        fail_result = PdslSourceResult(source.source, status, fail_findings, errors)
+        fail_result = PdslSourceResult(source.source, status, fail_findings, errors, tuple(declared_keys))
         return fail_result
         # @cpt-end:cpt-studio-algo-pdsl-validation-cli-helper-validate:p1:inst-return-source-fail
     # @cpt-end:cpt-studio-algo-pdsl-validation-cli-helper-validate:p1:inst-if-findings
     # @cpt-begin:cpt-studio-algo-pdsl-validation-cli-helper-validate:p1:inst-else-source-pass
     pass_findings = tuple(findings)
     # @cpt-begin:cpt-studio-algo-pdsl-validation-cli-helper-validate:p1:inst-return-source-pass
-    pass_result = PdslSourceResult(source.source, status, pass_findings, errors)
+    pass_result = PdslSourceResult(source.source, status, pass_findings, errors, tuple(declared_keys))
     return pass_result
     # @cpt-end:cpt-studio-algo-pdsl-validation-cli-helper-validate:p1:inst-return-source-pass
     # @cpt-end:cpt-studio-algo-pdsl-validation-cli-helper-validate:p1:inst-else-source-pass
@@ -415,6 +438,19 @@ def error_result(source: str, error: PdslError) -> PdslSourceResult:
     """Build a PDSL source result for a validation error."""
     return PdslSourceResult(source=source, status="ERROR", findings=(), errors=(error,))
 # @cpt-end:cpt-studio-algo-pdsl-validation-cli-helper-validate:p1:inst-return-source-error
+
+
+# @cpt-begin:cpt-studio-algo-pdsl-validation-cli-helper-validate:p1:inst-surface-declared-keys
+def extract_declared_gate_keys(source: str, text: str) -> Tuple[DeclaredGateKey, ...]:
+    """Return every `KEY:` declared in *text*, for corpus-level uniqueness checks.
+
+    Reuses the full validator so the keys collected are exactly the ones the
+    per-menu `KEY:` rules accept -- there is no second parser to drift from it.
+    Validation findings are computed and discarded; the caller wants only the
+    declared keys and their locations.
+    """
+    return validate_source(PdslSource(source=source, text=text)).declared_keys
+# @cpt-end:cpt-studio-algo-pdsl-validation-cli-helper-validate:p1:inst-surface-declared-keys
 
 
 # @cpt-begin:cpt-studio-algo-pdsl-validation-cli-helper-summary:p1:inst-build-summary-object
@@ -474,7 +510,7 @@ def _looks_like_pdsl_after_fence(lines: Sequence[str]) -> bool:
     return False
 
 
-def _validate_block(block: PdslBlock) -> List[PdslFinding]:
+def _validate_block(block: PdslBlock) -> Tuple[List[PdslFinding], List[DeclaredGateKey]]:
     findings: List[PdslFinding] = []
     names: Dict[Tuple[str, str], int] = {}
     local_patterns: Dict[str, int] = {}
@@ -523,7 +559,7 @@ def _validate_block(block: PdslBlock) -> List[PdslFinding]:
             local_patterns,
             findings,
         )
-    return findings
+    return findings, state.declared_keys
 
 
 def _handle_unit_or_menu_line(
@@ -752,6 +788,7 @@ def _handle_declared_menu_header(  # pylint: disable=too-many-arguments,too-many
     valid_tokens: Optional[Tuple[str, ...]] = None,
     value_ok: Optional[Callable[[str], bool]] = None,
     bad_value_desc: Optional[Callable[[str], str]] = None,
+    on_valid_value: Optional[Callable[[str, int], None]] = None,
 ) -> None:
     """Validate one declaration of *header* and record that this MENU carries one.
 
@@ -804,6 +841,8 @@ def _handle_declared_menu_header(  # pylint: disable=too-many-arguments,too-many
         findings.append(_finding(
             block, rule_bad_value, line_no, raw_line, message, hint=bad_value_hint,
         ))
+    elif on_valid_value is not None:
+        on_valid_value(value, line_no)
 
 
 def _handle_gate_type_header(
@@ -882,6 +921,9 @@ def _handle_gate_key_header(
         ),
         bad_value_hint="Declare a bare lowercase key (letters, digits, _; starts with a letter); "
                        "an economy filter later resolves it against the approved plan by exact match.",
+        on_valid_value=lambda value, line_no_: state.declared_keys.append(
+            DeclaredGateKey(menu=state.menu_name or "", key=value, line=line_no_)
+        ),
     )
 # @cpt-end:cpt-studio-algo-pdsl-validation-cli-helper-validate:p1:inst-gate-declaration-literal
 

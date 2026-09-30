@@ -158,7 +158,7 @@ Provide a deterministic validation path for developers and agents authoring or t
 
 **Input**: Ordered block records for one source plus verbosity mode
 
-**Output**: Source result `{source, status, findings, errors}`
+**Output**: Source result `{source, status, findings, errors, declared_keys}`
 
 **Steps**:
 1. [x] - `p1` - Load the rule registry from `studio.utils.pdsl` using stable `PDSL100`, `PDSL200`, `PDSL300`, `PDSL400`, `PDSL500`, `PDSL600`, `PDSL700`, `PDSL710`, and `PDSL720` rule bands - `inst-load-rule-registry`
@@ -181,6 +181,7 @@ Provide a deterministic validation path for developers and agents authoring or t
 **Supporting**:
 - [x] - `p1` - `studio.utils.pdsl` remains the sole production owner of parser behavior, validation rules, normalized findings, and summary semantics - `inst-validate-source-of-truth`
 - [x] - `p1` - No autofix patches, scaffold text, or rewrite templates are emitted by validation results - `inst-no-scaffold-output`
+- [x] - `p1` - Surface each menu's accepted `KEY` on the source result as a declared-key record (menu, key, line), and expose them via `extract_declared_gate_keys`, reusing the validated value so a corpus-level check can enforce cross-file key uniqueness without a second parser - `inst-surface-declared-keys`
 
 ### Build Validation Summary
 
