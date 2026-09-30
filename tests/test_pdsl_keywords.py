@@ -1061,18 +1061,14 @@ UNTYPED_MENU_BASELINE: frozenset[str] = frozenset({
     "skills/studio/modules/auto-config-precheck.md#0::ExistingRulesRefreshMenu",
     "skills/studio/modules/auto-config-scan-docs.md#0::ScanConfirmMenu",
     "skills/studio/modules/brainstorm-panel-render.md#0::PanelEditMenu",
-    "skills/studio/modules/brainstorm-rounds.md#0::PostRoundMenu",
-    "skills/studio/modules/brainstorm-rounds.md#0::QuestionMenu",
     "skills/studio/modules/brainstorm-wrap.md#0::WrapMenu",
     "skills/studio/modules/ci-discovery-run.md#0::CiDiscoveryFailureMenu",
     "skills/studio/modules/ci-discovery-run.md#0::CiDiscoverySkipMenu",
-    "skills/studio/modules/coding-prep-gates.md#0::CodingExploreMenu",
     "skills/studio/modules/coding-prep-gates.md#1::CodingBrainstormMenu",
     "skills/studio/modules/debug-prompts-failures.md#0::DebugRunFailureMenu",
     "skills/studio/modules/debug-prompts-failures.md#0::DebugStepFailureMenu",
     "skills/studio/modules/explain-intent-explore.md#2::ExplainExploreMenu",
     "skills/studio/modules/explore-clarify.md#0::ExploreClarifyMenu",
-    "skills/studio/modules/explore-save.md#0::ExploreSaveMenu",
     "skills/studio/modules/gates/migrate-from-cypilot-offer.md#0::MigrateFromCypilotConfirm",
     "skills/studio/modules/gates/plan-first.md#0::PlanFirstConfirm",
     "skills/studio/modules/gates/plan-first.md#1::PlanStorageChoice",
@@ -1471,6 +1467,25 @@ def test_the_untyped_menu_surface_does_not_grow() -> None:
         + "\n\nDeclare `TYPE: confirmation | decision | blocking` on each, or, if the "
         "menu was renamed or moved, update UNTYPED_MENU_BASELINE."
     )
+
+
+def test_the_322_pipeline_menus_declare_their_ruled_type() -> None:
+    """The four menus on the cf-explore -> cf-brainstorm -> cf-coding path (#322) each declare a gate
+    risk TYPE, so the workflow can no longer resolve them by runtime judgement -- the root cause of
+    the "it implemented fixes I didn't mark" report. Reverting any TYPE: fails this (the value drops
+    to None) and also fails test_the_untyped_menu_surface_does_not_grow (the menu is no longer
+    baselined), so the pin bites from both directions.
+    """
+    declarations = _menu_type_declarations()
+    expected = {
+        "skills/studio/modules/coding-prep-gates.md#0::CodingExploreMenu": "confirmation",
+        "skills/studio/modules/explore-save.md#0::ExploreSaveMenu": "decision",
+        "skills/studio/modules/brainstorm-rounds.md#0::PostRoundMenu": "decision",
+        "skills/studio/modules/brainstorm-rounds.md#0::QuestionMenu": "decision",
+    }
+    for key, want in expected.items():
+        assert declarations.get(key) == want, (
+            f"{key} should declare TYPE: {want}, got {declarations.get(key)!r}")
 
     # Both assertions above and below are set differences, so a rename -- one key
     # out, another in -- passes, as it should. So would a genuinely new untyped

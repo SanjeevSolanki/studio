@@ -26,6 +26,7 @@ RULES:
   ALWAYS reset clarify_count = 0 when advancing to the next question (on accept-default, custom, skip, or keep-current) and when starting a new round
 MENU QuestionMenu
 TITLE: Reply with a number, or write a custom answer.
+TYPE: decision
 OPTIONS:
   1 accept-default -> record the default as the decision; SET clarify_count = 0; SET PENDING_CLARIFICATION = unset; CONTINUE BrainstormRounds to the next question
   2 custom -> record the user's free text as the decision; SET clarify_count = 0; SET PENDING_CLARIFICATION = unset; CONTINUE BrainstormRounds to the next question
@@ -39,6 +40,7 @@ RULES:
   ALWAYS show option 5 ask in both topic-rounds and challenge-rounds
 MENU PostRoundMenu
 TITLE: Round complete — advance, challenge, or wrap.
+TYPE: decision
 OPTIONS:
   1 next:<topic> -> pick one of the panel's proposed next topics, set it as the current topic, SET round_kind = topic, SET round_dispatched = false, and CONTINUE BrainstormRounds to start the next round
   2 C | challenge -> SET round_kind = challenge, SET round_dispatched = false, and CONTINUE BrainstormRounds to execute the panel on this round's decisions and walk the challenge questions one by one
