@@ -85,6 +85,13 @@ class Gate:
     #: outputs declared by this phase and the ones before it, never a future phase's. ``None``
     #: means the active phase is unknown, which scope treats as fail-closed.
     active_phase: Optional[int] = None
+    #: The menu option's declared ``KEY:`` -- the declared-source counterpart of
+    #: ``GateRuling.decision_key`` -- which an economy filter resolves against the approved plan
+    #: by exact match (``plan_decisions.resolve``). Two states: ``None`` (the default) means the
+    #: menu declared no key (or the runtime read none), so there is nothing to resolve by and the
+    #: stop stands -- the gate asks; a string is the key to look up. Both non-key states fail safe
+    #: to asking, so unlike ``target_files`` no "undetermined vs known-empty" split is needed.
+    decision_key: Optional[str] = None
 # @cpt-end:cpt-studio-algo-core-infra-gate-chain:p1:inst-chain-gate
 
 

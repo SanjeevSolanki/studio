@@ -55,6 +55,24 @@ def test_the_blocking_token_matches_the_pdsl_vocabulary() -> None:
     assert BLOCKING in pdsl.GATE_TYPES
 
 
+def test_gate_decision_key_round_trips_and_defaults_to_none() -> None:
+    # The seam the economy filter (a later increment) reads: it resolves the approved plan by
+    # this key. None is the fail-safe default -- a menu that declares no KEY has nothing to
+    # resolve by, so the stop stands and the gate asks. Defaulting to "" instead would make an
+    # unkeyed gate look declared, so the default is asserted to be None, not falsy-in-general.
+    assert Gate(decision_key="deploy_target").decision_key == "deploy_target"
+    assert Gate().decision_key is None
+
+
+def test_gate_decision_key_is_the_declared_source_counterpart_of_the_ruling() -> None:
+    # Gate.decision_key (what the runtime read from the menu's KEY) and GateRuling.decision_key
+    # (what the resolution recorded) must share the name, so the declared key and the resolution
+    # key it feeds cannot drift apart. Both dataclasses carry the field under the same name.
+    import dataclasses  # noqa: PLC0415
+    assert "decision_key" in {f.name for f in dataclasses.fields(Gate)}
+    assert "decision_key" in {f.name for f in dataclasses.fields(GateRuling)}
+
+
 def test_an_empty_chain_asks_every_gate() -> None:
     # Increment 1 registers no filters, so behaviour is identical to today.
     assert resolve_gate(Gate(), "confirmation", [], []).kind is OutcomeKind.ASK
