@@ -15,6 +15,7 @@ RULES:
 MENU CodingExploreMenu
 TITLE: Before writing or reviewing code, discover task-relevant project context (existing conventions, related modules, call sites) with cf-explore — or skip? Skip is the default when the target and its context are already clear; explore for unfamiliar or cross-cutting code. Reply with a number.
 TYPE: confirmation
+KEY: coding_exploration
 OPTIONS:
   1 explore -> INVOKE skill `cf-explore` with intent=workflow-prep, task=ORIGINAL_INTENT, return_context=true; require it to return resource_context only and not perform review/authoring, SET RESOURCE_CONTEXT = provided, then CONTINUE CodingBrainstormGate
   2 skip -> CONTINUE CodingBrainstormGate
