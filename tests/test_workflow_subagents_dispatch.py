@@ -2795,7 +2795,11 @@ def test_simple_mode_gate_runs_in_current_non_exempt_workflows() -> None:
     ).read_text(encoding="utf-8")
 
     assert "UNIT SimpleModeGate" in module
-    assert "SET SIMPLE_MODE: unset | simple | normal" in module
+    assert "SET SIMPLE_MODE: unset | simple | normal | guided | debug" in module
+    # `guided` is a recognised mode that routes to its own branch; the flip increment will make it the
+    # user-selectable old behaviour once `autonomous` is the default. Behaviour-neutral here.
+    assert "simple-mode-guided.md WHEN SIMPLE_MODE == guided" in module
+    assert "CONTINUE SimpleModeGuided WHEN SIMPLE_MODE == guided" in module
     assert "MENU SimpleModeChoice" in module
     assert "1 assistant" in module
     assert "SET SIMPLE_MODE = simple" in module
@@ -3385,3 +3389,20 @@ def test_plan_first_prefers_subagent_dispatch_over_inline_steps() -> None:
     assert "route through GitCommitModeGate before git state changes" in plan_first
     assert "Disk is suggested for large, phased, or resume-sensitive plans" in plan_first
     assert "`RUN:` for inline owner-executed work" not in plan_first
+
+
+def test_guided_mode_branch_mirrors_normal_behaviour() -> None:
+    """`guided` is today's `normal` behaviour under a new token: the same no-op branch (existing
+    menus/gates/stops, no explanations or auto-selection), so the flip increment can route "old
+    behaviour" here without changing anything now."""
+    repo_root = Path(__file__).resolve().parents[1]
+    guided = (repo_root / "skills" / "studio" / "modules" / "gates" / "simple-mode-guided.md").read_text(encoding="utf-8")
+    assert "UNIT SimpleModeGuided" in guided
+    assert "REQUIRE SIMPLE_MODE == guided" in guided
+    # Same two behaviour rules the normal branch carries -- existing contracts intact, no overlay.
+    assert "ALWAYS continue with the workflow's existing menus, gates, stops, and output contracts" in guided
+    assert "NEVER add simple-mode explanations or automatic selections while SIMPLE_MODE == guided" in guided
+    # Behaviour-neutral: the session-opening menu is NOT yet offering guided (that is the flip).
+    simple_mode = (repo_root / "skills" / "studio" / "modules" / "gates" / "simple-mode.md").read_text(encoding="utf-8")
+    assert "SET SIMPLE_MODE = guided" not in simple_mode   # no menu option sets it yet
+    assert "SET SIMPLE_MODE = normal" in simple_mode        # today's suggested option is unchanged

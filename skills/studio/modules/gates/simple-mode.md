@@ -4,7 +4,7 @@
 UNIT SimpleModeGate
 PURPOSE: Ask once per session which workflow interaction mode Studio should use, then apply any mode-specific session setup.
 STATE:
-  SET SIMPLE_MODE: unset | simple | normal | debug (default unset, scope session)
+  SET SIMPLE_MODE: unset | simple | normal | guided | debug (default unset, scope session)
   SET SIMPLE_MODE_BRAVE_NEW_WORLD_DECISION: unset | enable | skip (default unset, scope session)
   SET ASSISTANT_MODE_NAME: string | unset (default unset, scope session)
 WHEN:
@@ -16,6 +16,8 @@ DO:
   CONTINUE SimpleModeDebug WHEN SIMPLE_MODE == debug
   LOAD {cf-studio-path}/.core/skills/studio/modules/gates/simple-mode-normal.md WHEN SIMPLE_MODE == normal
   CONTINUE SimpleModeNormal WHEN SIMPLE_MODE == normal
+  LOAD {cf-studio-path}/.core/skills/studio/modules/gates/simple-mode-guided.md WHEN SIMPLE_MODE == guided
+  CONTINUE SimpleModeGuided WHEN SIMPLE_MODE == guided
   EMIT_MENU SimpleModeChoice WHEN SIMPLE_MODE == unset
   WAIT user.reply WHEN SIMPLE_MODE == unset
   STOP_TURN WHEN SIMPLE_MODE == unset
