@@ -237,6 +237,25 @@ def test_read_is_a_declared_event_name() -> None:
     assert "read" in dl.EVENTS
 
 
+def test_verification_is_a_declared_event_name() -> None:
+    assert "verification" in dl.EVENTS
+
+
+@pytest.mark.parametrize("verdict", dl.VERIFICATION_VERDICTS)
+def test_record_verification_writes_each_verdict(verdict: str, log_path: Path) -> None:
+    """Every verdict writes and reads back under the one `verification` event name, so a
+    reader filtering `event == "verification"` sees all three, not just the one tried."""
+    wrote = dl.record_verification("PRD file exists", verdict, "ls shows prd.md", 2, path=log_path)
+    assert wrote is True
+    events = [e for e in dl.read_events(path=log_path) if e["event"] == "verification"]
+    assert len(events) == 1
+    payload = events[0]["payload"]
+    assert payload["verdict"] == verdict
+    assert payload["item"] == "PRD file exists"
+    assert payload["evidence"] == "ls shows prd.md"
+    assert payload["phase"] == 2   # the phase is recorded so same-text items stay distinguishable
+
+
 def test_summarize_reads_aggregates_tokens_and_lines_per_method(log_path: Path) -> None:
     dl.record_read("tfidf", "doc.md", 8925, 49676, path=log_path)
     dl.record_read("tfidf", "doc.md", 8925, 12000, path=log_path)
@@ -1987,7 +2006,7 @@ class TestAnEventTooLargeCannotHideASegment:
         """The count in the docstring, checked against the module rather than trusted.
 
         It said seven wrappers with six uncapped, taken from the report that raised the
-        defect — which listed six and omitted `record_dispatch`. There are eight, seven
+        defect — which listed six and omitted `record_dispatch`. There are now nine, eight
         of them uncapped, and the number was repeated three times before anyone counted.
 
         What actually matters is the second assertion: every typed wrapper reaches
@@ -1996,7 +2015,7 @@ class TestAnEventTooLargeCannotHideASegment:
         tree = ast.parse(Path(dl.__file__).read_text(encoding="utf-8"))
         wrappers = {node.name: ast.unparse(node) for node in tree.body
                     if isinstance(node, ast.FunctionDef) and node.name.startswith("record_")}
-        assert len(wrappers) == 8, sorted(wrappers)
+        assert len(wrappers) == 9, sorted(wrappers)
         for name, body in wrappers.items():
             assert "record(" in body.replace(f"{name}(", ""), (
                 f"{name} does not go through `record`, so the event bound does not cover it"

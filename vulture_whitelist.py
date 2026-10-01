@@ -305,3 +305,13 @@ _ = extract_declared_gate_keys
 # (a later increment). REMOVAL TRIGGER -- delete once that seam references it (grep
 # `PlanEconomyFilter` outside gate_filters.py and its tests).
 _ = PlanEconomyFilter
+
+# plan_items -- the deliverable-item reader is now consumed by commands/verify_completion.py. Two
+# item fields are not read in production yet: `authored_done` (the summary increment will compare the
+# author's claim against the verified verdict) and `verify_kind` (the deterministic-check increment
+# will set it to a value other than `explicit`). REMOVAL TRIGGER -- delete each once a non-test caller
+# reads it (grep `authored_done` / `verify_kind` outside plan_items.py and its tests).
+from studio.utils.plan_items import PlanItem  # noqa: E402
+_plan_item = PlanItem(phase=0, ordinal=0, text="", authored_done=False)
+_ = _plan_item.authored_done
+_ = _plan_item.verify_kind
