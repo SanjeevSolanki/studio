@@ -319,3 +319,73 @@ def test_blocker_stops_every_forbidden_operation_whose_category_is_in_the_invari
 # and a floor erring toward a stop on an ambiguous word is the correct direction.)
 def test_blocker_does_not_over_block_common_studio_terms(action: str) -> None:
     assert BlockerFilter().check(Gate(option_action=action)) is SafetyVerdict.CLEAR
+
+
+# --- plan economy filter ------------------------------------------------------------------
+from studio.utils.gate_chain import EconomyDecision  # noqa: E402
+from studio.utils.gate_filters import PlanEconomyFilter  # noqa: E402
+
+
+def _plan_dir(tmp_path: Path, body: str) -> Path:
+    (tmp_path / "plan.toml").write_text(body, encoding="utf-8")
+    return tmp_path
+
+
+def test_plan_filter_removes_the_stop_when_the_plan_resolves_the_key(tmp_path: Path) -> None:
+    plan = _plan_dir(tmp_path, '[plan]\ntask="x"\n\n[[gate_decisions]]\nkey="k"\nvalue="v"\n')
+    verdict = PlanEconomyFilter().check(Gate(decision_key="k", plan_dir=plan))
+    assert verdict.decision is EconomyDecision.REMOVE
+    assert verdict.ruling.value == "v"
+    assert verdict.ruling.provenance == "plan"      # the ruling records where the answer came from
+    assert verdict.ruling.decision_key == "k"
+    assert verdict.ruling.status == "resolved"       # the fourth contract field is propagated from the lookup
+
+
+def test_plan_filter_abstains_without_a_declared_key(tmp_path: Path) -> None:
+    # No key -> nothing to look up -> the stop stands (asks). The default Gate() too.
+    assert PlanEconomyFilter().check(Gate()).decision is EconomyDecision.NO_OPINION
+    assert PlanEconomyFilter().check(Gate(decision_key="")).decision is EconomyDecision.NO_OPINION
+
+
+def test_plan_filter_abstains_without_a_plan(tmp_path: Path) -> None:
+    # A key but no plan directory -> nothing to resolve against -> asks.
+    assert PlanEconomyFilter().check(Gate(decision_key="k")).decision is EconomyDecision.NO_OPINION
+
+
+def test_plan_filter_abstains_when_the_plan_is_silent(tmp_path: Path) -> None:
+    plan = _plan_dir(tmp_path, '[plan]\ntask="x"\n\n[[gate_decisions]]\nkey="other"\nvalue="v"\n')
+    assert PlanEconomyFilter().check(Gate(decision_key="k", plan_dir=plan)).decision is EconomyDecision.NO_OPINION
+
+
+def test_plan_filter_abstains_on_a_policy_key_since_it_supplies_no_case(tmp_path: Path) -> None:
+    # This filter handles only a plain value answer. A conditional/policy declaration cannot be
+    # decided without a case, and the filter supplies none, so it abstains (asks) rather than
+    # blaming the plan. Resolving a policy against a case is a later increment.
+    plan = _plan_dir(tmp_path, (
+        '[plan]\ntask="x"\n\n[[gate_decisions]]\nkey="k"\ndimension="d"\n'
+        '[gate_decisions.policy]\nserious="full"\nnormal="spot"\n'
+    ))
+    assert PlanEconomyFilter().check(Gate(decision_key="k", plan_dir=plan)).decision is EconomyDecision.NO_OPINION
+
+
+def test_plan_filter_fails_safe_when_the_lookup_raises(tmp_path: Path, monkeypatch) -> None:
+    # A read that raises must not crash the chain or open the gate: it abstains (the stop stands).
+    def _boom(*_a, **_k):
+        raise RuntimeError("disk gone")
+    monkeypatch.setattr(gate_filters.plan_decisions, "resolve", _boom)
+    plan = _plan_dir(tmp_path, '[plan]\ntask="x"\n\n[[gate_decisions]]\nkey="k"\nvalue="v"\n')
+    assert PlanEconomyFilter().check(Gate(decision_key="k", plan_dir=plan)).decision is EconomyDecision.NO_OPINION
+
+
+def test_plan_filter_records_the_sanitized_key_not_the_raw_gate_key(tmp_path: Path) -> None:
+    # `resolve()` bounds the decision_key (`_bounded`: cap + strip non-printables). The ruling must
+    # carry that bounded key, not the raw author-controlled one, or an oversized / control-char key
+    # would reach the decision log unsanitized once the filter is wired into a live gate.
+    from studio.utils import plan_decisions as pd  # noqa: PLC0415
+    raw = "k" * 600  # exceeds plan_decisions' 500-char gate-text cap
+    plan = _plan_dir(tmp_path, f'[plan]\ntask="x"\n\n[[gate_decisions]]\nkey="{raw}"\nvalue="v"\n')
+    verdict = PlanEconomyFilter().check(Gate(decision_key=raw, plan_dir=plan))
+    assert verdict.decision is EconomyDecision.REMOVE
+    bounded = pd.resolve(raw, plan).decision_key
+    assert verdict.ruling.decision_key == bounded      # the fix: built from the lookup, not the raw key
+    assert verdict.ruling.decision_key != raw          # and the bounded key really differs (capped 600 -> 500)
