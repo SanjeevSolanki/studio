@@ -1020,11 +1020,12 @@ def test_prompt_runtime_references_use_cf_studio_path() -> None:
 
 
 # Every MENU that does not yet declare a gate risk TYPE, frozen 2026-09-07.
-# `blocking` is the *intended* contract for an undeclared gate, not what happens
-# today: three shipped paths still resolve one by runtime judgement, so this set
-# freezes the existing untyped inventory rather than recording a fail-closed
-# default. The surface migrates gate by gate and must not grow -- anything not in
-# this set has to declare a TYPE.
+# `blocking` is the *intended* contract for an undeclared gate. In the autonomous
+# default mode it is now also the actual behaviour (that mode never resolves an
+# undeclared gate); two other paths still resolve one by runtime judgement,
+# so this set freezes the existing untyped inventory rather than recording a
+# fail-closed default. The surface migrates gate by gate and must not grow --
+# anything not in this set has to declare a TYPE.
 # Shrink this set as menus are typed; never add to it.
 UNTYPED_MENU_BASELINE: frozenset[str] = frozenset({
     "architecture/specs/PDSL.md#15::SubAgentApprovalMenu",
@@ -1232,9 +1233,14 @@ def _menu_shape_declarations() -> dict[str, str | None]:
 #: a declared TYPE. Named here so the claim in UNTYPED_MENU_BASELINE's comment is
 #: pinned to something: if a path is retired or stops judging, the guard below
 #: fails and the comment has to be corrected with it. Sourced from
-#: `architecture/specs/PDSL.md`, which cites the same three.
+#: `architecture/specs/PDSL.md`, which cites the same two. The default flip
+#: retired the third -- assistant mode's own auto-selection rule in
+#: `simple-mode-rules.md` -- so autonomy there now comes from a declared type
+#: resolved against the plan, not from a confidence judgement. Both survivors are
+#: outside the autonomous default's declaration-driven resolution: one is opt-in
+#: (BNW), one is mode-agnostic (the dispatch pre-set, bounded by an explicit
+#: imperative in the user's message, not by the mode).
 RUNTIME_JUDGEMENT_PATHS = {
-    "skills/studio/modules/gates/simple-mode-rules.md": "ALWAYS choose automatically only when",
     "workflows/brave-new-world.md": "allowing this overlay to answer eligible menus",
     "skills/studio/modules/subagents/dispatch.md": "SUB_AGENT_GROUP_DECISION = approve-once",
 }
@@ -1261,25 +1267,26 @@ def test_the_runtime_judgement_paths_named_in_the_baseline_comment_still_exist()
     """Pin the claim that undeclared gates are resolved by judgement, not fail-closed.
 
     `UNTYPED_MENU_BASELINE`'s comment and this module's docstrings state that
-    `blocking` is the intended contract rather than current behaviour, because
-    shipped paths still auto-resolve an undeclared gate by runtime judgement.
-    That is a factual claim about three specific files, and prose cannot hold it:
-    a path could be retired or bound to declared types and the comment would
-    quietly become false, which is the same overclaim this wording replaced.
+    `blocking` is the intended contract, now also the default-mode behaviour,
+    while two other paths still auto-resolve an undeclared gate by runtime
+    judgement. That is a factual claim about two specific files, and prose cannot
+    hold it: a path could be retired or bound to declared types and the comment
+    would quietly become false, which is the same overclaim this wording replaced.
 
     So the count, the paths and both halves of the claim are asserted: each path
     still carries its auto-resolution rule, and none of them reads a declared
     type. The second half matters more, because binding these paths to declared
-    types is exactly what the default flip does -- so that is where the comment
-    will go stale first. An earlier version of this guard checked only the first
-    half and passed when a path gained a declared-type read.
+    types is exactly what the default flip does -- it already retired the third
+    path (assistant mode's auto-selection), so that is where the comment will go
+    stale first. An earlier version of this guard checked only the first half and
+    passed when a path gained a declared-type read.
 
     What still gets past it: a path that reads a declaration in wording
     `DECLARED_TYPE_READ_RE` does not match. The fix when this fails is to correct
     the comment in the same change, not to edit these constants to match.
     """
-    assert len(RUNTIME_JUDGEMENT_PATHS) == 3, (
-        f"The comment on UNTYPED_MENU_BASELINE says three paths resolve gates by "
+    assert len(RUNTIME_JUDGEMENT_PATHS) == 2, (
+        f"The comment on UNTYPED_MENU_BASELINE says two paths resolve gates by "
         f"runtime judgement; this guard names {len(RUNTIME_JUDGEMENT_PATHS)}. Keep "
         "the two in step."
     )
@@ -1318,6 +1325,24 @@ def test_the_runtime_judgement_paths_named_in_the_baseline_comment_still_exist()
             "UNTYPED_MENU_BASELINE and the docstring below it -- `blocking` may have "
             "become the actual behaviour rather than only the intended contract.",
         ]
+    )
+
+
+def test_sub_agent_dispatch_pre_set_is_mode_agnostic() -> None:
+    """The dispatch pre-set path runs in every SIMPLE_MODE, including the default (PR #398).
+
+    PDSL.md describes this path as mode-agnostic -- `dispatch.md:43` pre-sets the dispatch
+    decision from an explicit imperative in the user's message, with no `SIMPLE_MODE` gate,
+    so it fires in the autonomous default too. An earlier draft of that spec text called it
+    "non-default modes," which review corrected. This pins the fact so the doc and the rule
+    cannot silently drift: if dispatch ever gains a `SIMPLE_MODE` carve-out, this fails and
+    PDSL.md's characterisation of the path must be revisited with it.
+    """
+    dispatch = (REPO_ROOT / "skills/studio/modules/subagents/dispatch.md").read_text(encoding="utf-8")
+    assert "SUB_AGENT_GROUP_DECISION = approve-once" in dispatch   # the pre-set rule is present
+    assert "SIMPLE_MODE" not in dispatch, (
+        "dispatch.md now references SIMPLE_MODE, so its pre-set path may no longer be "
+        "mode-agnostic; revisit PDSL.md's description of the runtime-judgement paths."
     )
 
 
@@ -1449,10 +1474,11 @@ def test_the_untyped_menu_surface_does_not_grow() -> None:
 
     The tail recorded in UNTYPED_MENU_BASELINE is grandfathered so the surface
     can migrate one gate at a time. It is *not* grandfathered because undeclared
-    already means `blocking` -- that is the intended contract, and three shipped
-    paths still resolve an undeclared gate by runtime judgement today. This test
-    freezes the existing untyped inventory: what must not happen is that
-    inventory growing, so a MENU neither typed nor in the baseline fails here.
+    already means `blocking` everywhere -- that is the intended contract, now also
+    the autonomous default's behaviour, while two other paths still resolve
+    an undeclared gate by runtime judgement today. This test freezes the existing
+    untyped inventory: what must not happen is that inventory growing, so a MENU
+    neither typed nor in the baseline fails here.
     """
     declarations = _menu_type_declarations()
     untyped_now = {key for key, value in declarations.items() if value is None}

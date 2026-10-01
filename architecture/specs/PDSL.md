@@ -386,26 +386,39 @@ Rules:
 - **`TYPE` may be omitted.** An undeclared menu is valid, and a *newly added*
   menu must declare one, so menus migrate one at a time and the undeclared set
   can only shrink.
-- **What an omitted `TYPE` means at runtime is not implemented here, and this
-  spec does not claim otherwise.** Nothing reads a declaration today, in any
-  mode: the rules above are lint only. The intended contract is that an
-  undeclared menu is treated as `blocking` — the conservative direction, in
-  which a gate asks rather than proceeds.
-- **Nothing resolves a gate from a declared type today**, so this lint changes
-  no runtime behaviour. Three shipped paths *do* auto-resolve gates, and none of
-  them reads a declaration: assistant mode's own auto-selection rule
-  (`skills/studio/modules/gates/simple-mode-rules.md:19`), the autonomy overlay
-  (`workflows/brave-new-world.md`), and sub-agent dispatch's pre-set rule
-  (`skills/studio/modules/subagents/dispatch.md:43`), all of which decide by
-  runtime judgement. So an undeclared menu is **not** fail-closed today — it is
-  subject to those three paths exactly as it was before this change.
-- **Enforcing the default here would not make it true.** A lint cannot bind
-  either path; both must be retired or bound to declared types by the change
-  that introduces declaration-driven resolution, which is where the obligation
-  and a test asserting that an omitted `TYPE` produces blocking behaviour
-  belong. Until then, omission is *unvalidated*, and the safety of the
-  grandfathered set rests on those three paths being narrow and reviewed — not on
-  a default that has been demonstrated.
+- **What an omitted `TYPE` means at runtime is realised in the autonomous
+  default mode, not by this lint.** The lint rules above stay lint only; what
+  reads a declaration is the autonomous default mode
+  (`skills/studio/modules/gates/simple-mode-autonomous.md`), which never resolves
+  a `blocking` or undeclared gate. So in the default mode the intended contract
+  already holds — an undeclared menu is treated as `blocking`, the conservative
+  direction in which a gate asks rather than proceeds.
+- **Declaration-driven resolution exists as of the default flip.** The autonomous
+  default mode resolves an *eligible* gate — one whose declared `TYPE` is
+  `confirmation` or `decision` — by taking the one valid option the approved
+  plan's `[[gate_decisions]]` answers for its declared `KEY`; it reads the
+  declaration to do so. Two shipped paths still auto-resolve gates by runtime
+  judgement rather than a declaration, and neither is the autonomous default
+  resolving one: the autonomy overlay (`workflows/brave-new-world.md`), reachable
+  only when the user opts into it, and sub-agent dispatch's pre-set rule
+  (`skills/studio/modules/subagents/dispatch.md:43`), which is **mode-agnostic**.
+  The dispatch path skips the `TYPE: blocking` approval menu when it judges the
+  message an explicit imperative with a named target, in any mode including the
+  default, so it is bounded by that phrasing-inference rather than by the mode,
+  and is pre-existing and unchanged by this flip. Assistant mode's former
+  auto-selection rule was retired by the flip — it now narrates and recommends but
+  never selects. So an undeclared menu is **not** fail-closed in those two paths,
+  but the autonomous default mode itself never resolves one: it asks every
+  `blocking` or undeclared gate.
+- **The lint still does not enforce this; the default flip does.** A lint cannot
+  bind a path. The change that introduces declaration-driven resolution has now
+  landed: the autonomous default reads declared types and asks any `blocking` or
+  undeclared gate, and the assistant auto-select path was retired. The remaining
+  two judgement paths — one opt-in, one mode-agnostic but bounded by an explicit
+  imperative in the user's own message — are narrow and reviewed, and the
+  autonomous default mode itself asks every undeclared gate, so the safety of the
+  grandfathered set rests on those facts — asserted by a structural test over
+  `simple-mode-autonomous.md`, not demonstrated by a lint default.
 - **`TYPE` is read only in the menu's declaration region:** from the menu
   header up to the first section that is not `TITLE`, `TYPE`, `SHAPE`, or
   `KEY` (all three declarations share one region -- see "Declared menu shape"
@@ -461,9 +474,10 @@ Rules:
   writes for false positives on prose in another script. In every such case the
   gate is left undeclared, and therefore `blocking` **under the model this spec
   records** — the failure direction is more friction, never more autonomy. That
-  is the contract rather than current behaviour: as stated above, an undeclared
-  menu is not fail-closed today, because three shipped paths still resolve one
-  by runtime judgement.
+  is the contract, and in the autonomous default mode it is now also current
+  behaviour; as stated above, an undeclared menu is still not fail-closed in the
+  two remaining paths that resolve by runtime judgement — the opt-in overlay and
+  the mode-agnostic dispatch pre-set.
 - Everything else is prose, in the region or out of it: `NOTE:`, `NOTES:` and
   `ELSE:`, any lower- or mixed-case line whose value is **some other token**
   (`type: skill`, `**Type**: CLI`), and any line with neither a separator nor a

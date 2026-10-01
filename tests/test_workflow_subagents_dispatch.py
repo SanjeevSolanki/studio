@@ -2796,8 +2796,11 @@ def test_simple_mode_gate_runs_in_current_non_exempt_workflows() -> None:
 
     assert "UNIT SimpleModeGate" in module
     assert "SET SIMPLE_MODE: unset | simple | normal | guided | debug" in module
-    # `guided` is a recognised mode that routes to its own branch; the flip increment will make it the
-    # user-selectable old behaviour once `autonomous` is the default. Behaviour-neutral here.
+    # The flip: `normal` is the default and resolves to the autonomous contract; `guided` carries the
+    # old step-by-step behaviour as an opt-in branch.
+    assert "default normal" in module
+    assert "simple-mode-autonomous.md WHEN SIMPLE_MODE == normal" in module
+    assert "CONTINUE SimpleModeAutonomous WHEN SIMPLE_MODE == normal" in module
     assert "simple-mode-guided.md WHEN SIMPLE_MODE == guided" in module
     assert "CONTINUE SimpleModeGuided WHEN SIMPLE_MODE == guided" in module
     assert "MENU SimpleModeChoice" in module
@@ -2805,14 +2808,19 @@ def test_simple_mode_gate_runs_in_current_non_exempt_workflows() -> None:
     assert "SET SIMPLE_MODE = simple" in module
     assert "2 normal" in module
     assert "SET SIMPLE_MODE = normal" in module
+    assert "4 guided" in module
+    assert "SET SIMPLE_MODE = guided" in module
     assert "SimpleModeSimpleEntry" in module
     assert "modules/gates/simple-mode-rules.md" in simple_module
     assert "NEVER load `simple-mode-rules.md` for normal mode or unset mode" in simple_module
-    assert "SimpleModeNormal" in module
+    # The normal branch now routes to the autonomous unit, not the retired no-op `SimpleModeNormal`.
+    assert "SimpleModeAutonomous" in module
+    assert "SimpleModeNormal" not in module
     assert "explain the current workflow/unit/menu" not in module
     assert "UNIT SimpleModeRulesActive" in rules_module
     assert "explain the current state" in rules_module
-    assert "non-destructive, reversible, low-impact, unambiguous" in rules_module
+    # Assistant mode narrates and recommends but never auto-selects; autonomy lives in the autonomous mode.
+    assert "NEVER choose automatically in assistant mode" in rules_module
     assert "NEVER override hard gates" in rules_module
 
     assert "UNIT WorkflowBootstrapSimpleModeGate" in bootstrap
@@ -3392,17 +3400,66 @@ def test_plan_first_prefers_subagent_dispatch_over_inline_steps() -> None:
 
 
 def test_guided_mode_branch_mirrors_normal_behaviour() -> None:
-    """`guided` is today's `normal` behaviour under a new token: the same no-op branch (existing
-    menus/gates/stops, no explanations or auto-selection), so the flip increment can route "old
-    behaviour" here without changing anything now."""
+    """`guided` carries the pre-flip `normal` behaviour under its own token: the same no-op branch
+    (existing menus/gates/stops, no explanations or auto-selection). After the flip, `normal` is the
+    autonomous default and `guided` is the opt-in that restores every menu and stop."""
     repo_root = Path(__file__).resolve().parents[1]
     guided = (repo_root / "skills" / "studio" / "modules" / "gates" / "simple-mode-guided.md").read_text(encoding="utf-8")
     assert "UNIT SimpleModeGuided" in guided
     assert "REQUIRE SIMPLE_MODE == guided" in guided
-    # Same two behaviour rules the normal branch carries -- existing contracts intact, no overlay.
+    # Same two behaviour rules the pre-flip normal branch carried -- existing contracts intact, no overlay.
     assert "ALWAYS continue with the workflow's existing menus, gates, stops, and output contracts" in guided
     assert "NEVER add simple-mode explanations or automatic selections while SIMPLE_MODE == guided" in guided
-    # Behaviour-neutral: the session-opening menu is NOT yet offering guided (that is the flip).
+    # The flip: the session-opening menu now offers guided as an explicit opt-in.
     simple_mode = (repo_root / "skills" / "studio" / "modules" / "gates" / "simple-mode.md").read_text(encoding="utf-8")
-    assert "SET SIMPLE_MODE = guided" not in simple_mode   # no menu option sets it yet
-    assert "SET SIMPLE_MODE = normal" in simple_mode        # today's suggested option is unchanged
+    assert "SET SIMPLE_MODE = guided" in simple_mode        # menu option 4 restores the step-by-step mode
+    assert "SET SIMPLE_MODE = normal" in simple_mode        # option 2 sets the autonomous default
+
+
+def test_autonomous_mode_resolves_only_eligible_declared_gates() -> None:
+    """The autonomous default resolves `confirmation`/`decision` gates from the
+    approved plan and NEVER resolves a `blocking` or undeclared one. Pinned against
+    its own regression: a rewrite that drops the blocking exclusion, the eligibility
+    restriction, or the announce-before-resolve ordering fails here, so the contract
+    PDSL.md now relies on cannot quietly erode."""
+    repo_root = Path(__file__).resolve().parents[1]
+    autonomous = (
+        repo_root / "skills" / "studio" / "modules" / "gates" / "simple-mode-autonomous.md"
+    ).read_text(encoding="utf-8")
+    assert "UNIT SimpleModeAutonomous" in autonomous
+    assert "REQUIRE SIMPLE_MODE == normal" in autonomous
+    # Resolves only eligible gates, and from the approved plan's declared decisions.
+    assert "`confirmation` or `decision`" in autonomous
+    assert "[[gate_decisions]]" in autonomous
+    assert "declared KEY" in autonomous
+    # The invariant the flip must never drop: blocking/undeclared are asked, not guessed.
+    assert "NEVER resolve a gate whose declared TYPE is `blocking` or undeclared" in autonomous
+    assert "fresh explicit user authorisation" in autonomous
+    # Announce the mode before the first resolution, never after.
+    assert "before the first autonomous resolution" in autonomous
+    assert re.search(r"NEVER announce it after", autonomous)
+    # Autonomy changes who answers, never what gets checked: every hard gate stays active.
+    assert "GitCommitModeGate" in autonomous
+    assert "SubAgentDispatch" in autonomous
+    assert "NEVER add assistant-mode explanations or narration while SIMPLE_MODE == normal" in autonomous
+
+
+def test_assistant_mode_narrates_but_never_auto_selects_after_the_flip() -> None:
+    """After the flip, assistant mode keeps its narration and loses auto-selection:
+    autonomy moved to the autonomous mode (a declared type resolved against the plan),
+    not a confidence judgement in assistant mode. Both halves pinned so the retired
+    auto-select rules cannot creep back."""
+    repo_root = Path(__file__).resolve().parents[1]
+    rules = (
+        repo_root / "skills" / "studio" / "modules" / "gates" / "simple-mode-rules.md"
+    ).read_text(encoding="utf-8")
+    # Narration retained.
+    assert "explain the current state" in rules
+    assert "recommended" in rules
+    # The superseded confidence auto-select rules must be gone.
+    assert "choose automatically only when" not in rules
+    assert "non-destructive, reversible, low-impact, unambiguous" not in rules
+    # The single replacement rule points autonomy at the autonomous mode's declaration.
+    assert "NEVER choose automatically in assistant mode" in rules
+    assert "autonomy comes from a declared type resolved against the plan" in rules
+    assert "NEVER override hard gates" in rules
