@@ -58,7 +58,7 @@ SCHEMA_VERSION = 1
 
 #: Event names this module writes. Readers must tolerate others.
 EVENTS = ("routing", "dispatch", "validation", "review", "escalation", "invocation",
-          "read", "gate", "rotate")
+          "read", "gate", "verification", "rotate")
 
 #: Subtypes of a ``gate`` event, carried in ``payload.kind`` rather than in the event
 #: name, so a reader filtering ``event == "gate"`` sees all of them.
@@ -74,6 +74,12 @@ GATE_PROVENANCE = ("plan", "ledger", "workflow-recommendation", "policy")
 #: Outcome of looking the answer up. ``absent`` and ``ambiguous`` both mean the gate
 #: asked instead of resolving; neither is a resolution.
 GATE_STATUSES = ("resolved", "absent", "ambiguous")
+
+#: Verdicts a verification-before-completion pass records per plan item. ``satisfied``
+#: and ``not-applicable`` let a run complete; a single ``not-satisfied`` makes it
+#: incomplete. Enumerated so a reader counting verdicts shares one vocabulary with the
+#: writer, the same reason the gate kinds are.
+VERIFICATION_VERDICTS = ("satisfied", "not-satisfied", "not-applicable")
 
 #: What a field with no value renders as. The frozen contract requires an omitted
 #: field to be *visible*: "a missing key and a key meaning 'not specified' must not
@@ -823,6 +829,24 @@ def record_dispatch(agent: str, tier: str = "", model: str = "", provider: str =
     return record("dispatch", {
         "agent": agent, "tier": tier, "model": model,
         "provider": provider, "target": target,
+    }, command=command, decision_id=decision_id, path=path)
+
+
+def record_verification(item: str, verdict: str, evidence: str = "",
+                        phase: Optional[int] = None, *,
+                        command: str = "", decision_id: str = "",
+                        path: Optional[Path] = None) -> bool:
+    """Log one plan item's completion verdict and the evidence it rests on.
+
+    ``item`` is a deliverable criterion from the approved plan, ``verdict`` one of
+    ``VERIFICATION_VERDICTS``, ``evidence`` the fresh command and exit code (or the statement)
+    the verdict rests on, and ``phase`` the plan phase the item belongs to -- recorded so two
+    phases that declare the **same** criterion text are distinguishable in the log, not
+    collapsed to one. Like every helper here it records and never raises: a verification that
+    cannot be logged must not change whether the run reports complete.
+    """
+    return record("verification", {
+        "item": item, "verdict": verdict, "evidence": evidence, "phase": phase,
     }, command=command, decision_id=decision_id, path=path)
 
 
