@@ -3432,6 +3432,20 @@ def test_autonomous_mode_resolves_only_eligible_declared_gates() -> None:
     assert "`confirmation` or `decision`" in autonomous
     assert "[[gate_decisions]]" in autonomous
     assert "declared KEY" in autonomous
+    # Records each plan resolution to the audit log via gate-log; best-effort, and the command
+    # is instrumentation that never changes the resolution (guarded on cost by gate-log itself).
+    assert "gate-log --kind plan-resolved" in autonomous
+    assert "--cost-if-wrong <the matched entry's cost_if_wrong>" in autonomous
+    assert "instrumentation and never changes the resolution" in autonomous
+    # The invocation must carry every argument `cmd_gate_log` REQUIRES, or it exits 2 and writes
+    # nothing — a valid rule, not just a present one (the gap an earlier version left). Scope the
+    # flag checks to the gate-log line itself, and match each flag as a complete token (followed by
+    # its value) so a prefix like `--gate-extra` can't satisfy `--gate`; one assertion per flag so a
+    # failure names the missing one.
+    invocation = next(
+        line for line in autonomous.splitlines() if "gate-log --kind plan-resolved" in line)
+    for required in ("--kind", "--gate", "--declared-type", "--decision-key", "--cost-if-wrong"):
+        assert f"{required} " in invocation, required
     # The invariant the flip must never drop: blocking/undeclared are asked, not guessed.
     assert "NEVER resolve a gate whose declared TYPE is `blocking` or undeclared" in autonomous
     assert "fresh explicit user authorisation" in autonomous

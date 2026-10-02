@@ -146,7 +146,11 @@ Use this structure:
 > When a pre-resolved decision answers a gate's declared `KEY:`, also record it as a matching
 > `[[gate_decisions]]` entry in the plan's `plan.toml` manifest (see
 > `architecture/features/execution-plans.md` → Plan Storage), so the gate resolves from the plan
-> instead of re-asking. The entry's `key` uses the same snake_case shape as the `KEY:`.
+> instead of re-asking. The entry's `key` uses the same snake_case shape as the `KEY:`. An entry
+> MAY also carry `cost_if_wrong` (what it costs if this decision is wrong, one line) and `why`
+> (a one-line rationale); when `cost_if_wrong` is present, the autonomous mode records the
+> resolution to the decision log, so autonomous rulings are auditable. An entry without
+> `cost_if_wrong` still resolves the gate exactly the same — the record is simply not written.
 
 ```pdsl
 UNIT PhaseFileUserDecisionsRules
