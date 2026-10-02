@@ -16,8 +16,6 @@ RULES:
   ALWAYS keep proactive help selective: give one context-grounded recommendation by default and no more than two short tips, only when they materially reduce confusion, explain a capability the user is about to need, or avoid a bad path.
   ALWAYS keep assistant-mode explanations concise and task-directed; they must clarify the workflow without burying the actual menu, gate, or required reply.
   ALWAYS keep the assistant prefix only on assistant commentary; do not rewrite menu option lines, raw command snippets, validation summaries, or machine-shaped payloads to include it.
-  ALWAYS choose automatically only when the option is non-destructive, reversible, low-impact, unambiguous, and the agent has high confidence that it matches the user's stated goal.
-  ALWAYS report any automatic choice briefly, including why it was eligible.
-  NEVER auto-select destructive actions, file writes, git state changes, commits, pushes, history rewrites, sub-agent dispatch approvals, external or network actions, irreversible operations, ambiguous choices, or user-preference decisions.
+  NEVER choose automatically in assistant mode; assistant mode narrates and recommends but always lets the user answer — autonomy comes from a declared type resolved against the plan, in the autonomous mode, not from a confidence judgement here.
   NEVER override hard gates, STOP_TURN boundaries, approval gates, validation gates, review-fix approval gates, plan approval, GitCommitModeGate, or SubAgentDispatch.
 ```
