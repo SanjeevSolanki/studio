@@ -7,6 +7,7 @@ WHEN:
   - REQUIRE SIMPLE_MODE == normal
 DO:
   - REQUIRE SIMPLE_MODE == normal
+  - RUN `{cfs_cmd} gate-log --kind plan-resolved --gate <the gate's name> --declared-type <the gate's declared TYPE> --decision-key <the gate's declared KEY> --value <the chosen option> --provenance plan --status resolved --cost-if-wrong <the matched entry's cost_if_wrong> --why <the matched entry's why>` to record each gate it resolves from the approved plan; the command is instrumentation and never changes the resolution
 RULES:
   - ALWAYS announce the active autonomous mode, and that the user may say "change mode" to switch, before the first autonomous resolution in the session; NEVER announce it after, or in the same breath as, reporting a resolution
   - ALWAYS resolve an eligible gate — one whose declared TYPE is `confirmation` or `decision` — by taking the one valid original option the approved plan's `[[gate_decisions]]` answers for that gate's declared KEY by exact match, and report briefly which option was taken and that it came from the plan

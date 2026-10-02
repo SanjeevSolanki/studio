@@ -508,7 +508,16 @@ re-asking:
 [[gate_decisions]]
 key = "runtime_base_image"
 value = "ubuntu-24.04"
+cost_if_wrong = "a rebuild on the wrong base; minutes, reversible"
+why = "the task targets the current LTS"
 ```
+
+An entry MAY carry two optional fields beside `key`/`value`: `cost_if_wrong` (what it costs if this
+pre-decision is wrong, one line) and `why` (a one-line rationale). When `cost_if_wrong` is present,
+the autonomous default records the resolution to the decision log (`cfs gate-log --kind
+plan-resolved …`), so an autonomous ruling is auditable — it states what it answered and what being
+wrong costs. An entry that omits `cost_if_wrong` resolves the gate identically; the audit record is
+simply not written (best-effort). The deterministic Python write path is a later increment.
 
 A policy entry names the enum dimension the plan resolves it through and the row table, rather than
 a single `value`:
