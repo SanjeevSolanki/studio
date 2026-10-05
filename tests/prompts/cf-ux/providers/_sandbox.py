@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import atexit
 import contextlib
+import json
 import os
 import shutil
 import signal
@@ -272,6 +273,12 @@ def wipe_isolated_home(path: Path) -> None:
     _LIVE_HOMES.discard(home)
 
 
+#: Environment variables only. A credential or endpoint chosen by a *settings file*
+#: -- Claude's `apiKeyHelper` in `settings.json` -- is not in this set and is not
+#: filtered by `child_env` (only that helper is detected, not other settings): the runner's `HOME` is kept by default, because its plugins
+#: and user-level settings are what the pilot measures the skill against. The isolated
+#: home (`CF_UX_ISOLATED_HOME=1`) is what removes them, and
+#: :func:`warn_on_settings_credential_helper` says so when it is not in effect (#404).
 BACKEND_ROUTING_NAMES = frozenset({
     "ANTHROPIC_BASE_URL",
     "ANTHROPIC_API_URL",
@@ -324,6 +331,9 @@ def child_env(*prefixes: str, tmpdir: Path | None = None, home: Path | None = No
     so a child that writes scratch files leaves them in the sandbox that is wiped
     rather than in a directory that outlives the run.
 
+    Environment variables only: a credential helper configured in a settings file is
+    out of reach here -- see :func:`warn_on_settings_credential_helper`.
+
     ``HOME`` stays the runner's unless *home* is given -- the directory
     :func:`isolated_home` built, in which case the variables in
     :data:`HOME_ROOTED_NAMES` are dropped too, since they point back at the runner's
@@ -353,6 +363,83 @@ def child_env(*prefixes: str, tmpdir: Path | None = None, home: Path | None = No
         scratch.mkdir(parents=True, exist_ok=True)
         env["TMPDIR"] = str(scratch)
     return env
+
+
+#: The key Claude Code reads a credential helper from, in a settings file.
+_CLAUDE_HELPER_SETTING = "apiKeyHelper"
+_CLAUDE_SETTINGS_FILES = ("settings.json", "settings.local.json")
+
+
+def _configures_helper(text: str) -> bool:
+    """Whether a settings file's text sets a credential helper.
+
+    Parsed, so `{"apiKeyHelper": null}` or a mention in a description is not a helper.
+    A file that does not parse still names the setting if the word is in it, and
+    "might configure a helper" is the right answer for a warning.
+    """
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return _CLAUDE_HELPER_SETTING in text
+    return isinstance(data, dict) and bool(data.get(_CLAUDE_HELPER_SETTING))
+
+
+def settings_credential_helpers(home: Path | None) -> list[Path]:
+    """The Claude user settings files the child would read that configure `apiKeyHelper`.
+
+    Empty when *home* is given: the isolated home holds only a credential link, so no
+    settings file of the runner's is reachable. Otherwise the child sees the runner's
+    config root -- `CLAUDE_CONFIG_DIR` when set, `~/.claude` when not -- and a helper
+    configured there supplies the credential instead of the one the run reports.
+
+    User scope only: the project settings under the child's working directory are the
+    sandbox's own. Not covered either, and not part of #404: other settings that
+    repoint the backend (an `env` block), and the `codex` equivalent in `config.toml`.
+    """
+    if home is not None:
+        return []
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+    try:
+        root = Path(config_dir) if config_dir else Path.home() / ".claude"
+    except RuntimeError:
+        return []  # no home to resolve: the child has none to read either
+    found = []
+    for name in _CLAUDE_SETTINGS_FILES:
+        path = root / name
+        try:
+            if _configures_helper(path.read_text(encoding="utf-8", errors="replace")):
+                found.append(path)
+        except OSError:
+            continue  # absent is the ordinary case; unreadable cannot name a helper
+    return found
+
+
+_WARNED_SETTINGS_HELPERS: set[Path] = set()
+
+
+def warn_on_settings_credential_helper(home: Path | None) -> None:
+    """Say on stderr when the child will inherit a settings-file credential helper.
+
+    `child_env` filters environment variables only; this is the other door (#404). It
+    warns rather than strips: removing the helper would change what the run measures,
+    which is why the runner's home is the default. Once per file per process -- the
+    answer does not change between scenarios, and N repeats bury the rest of stderr.
+    """
+    for path in settings_credential_helpers(home):
+        if path in _WARNED_SETTINGS_HELPERS:
+            continue
+        _WARNED_SETTINGS_HELPERS.add(path)
+        if isolated_home_requested():
+            way_out = (f"{ISOLATED_HOME_ENV}=1 is set but declined for this CLI, so the "
+                       "helper stays in effect")
+        else:
+            way_out = f"{ISOLATED_HOME_ENV}=1 runs without it"
+        print(
+            f"cf-ux: {path} configures {_CLAUDE_HELPER_SETTING}, and the graded CLI reads "
+            f"it, so the run may use that credential source rather than the default one; "
+            f"{way_out}",
+            file=sys.stderr,
+        )
 
 
 #: Minimum length a forwarded value must have before it is worth redacting. Short
