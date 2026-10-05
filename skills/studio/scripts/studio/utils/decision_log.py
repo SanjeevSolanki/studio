@@ -843,7 +843,7 @@ def record_dispatch(agent: str, tier: str = "", model: str = "", provider: str =
 
 
 def record_verification(item: str, verdict: str, evidence: str = "",
-                        phase: Optional[int] = None, *,
+                        phase: Optional[int] = None, *, own_verdict: str = "",
                         command: str = "", decision_id: str = "",
                         path: Optional[Path] = None) -> bool:
     """Log one plan item's completion verdict and the evidence it rests on.
@@ -852,12 +852,20 @@ def record_verification(item: str, verdict: str, evidence: str = "",
     ``VERIFICATION_VERDICTS``, ``evidence`` the fresh command and exit code (or the statement)
     the verdict rests on, and ``phase`` the plan phase the item belongs to -- recorded so two
     phases that declare the **same** criterion text are distinguishable in the log, not
-    collapsed to one. Like every helper here it records and never raises: a verification that
-    cannot be logged must not change whether the run reports complete.
+    collapsed to one. ``own_verdict`` (optional) is what the run itself believed about the
+    criterion when the primary ``verdict`` was **overridden** -- e.g. an item blocked on an open
+    question is recorded ``not-satisfied`` but may carry ``own_verdict="satisfied"``, so an audit
+    can tell "blocked, but the work passed" from "blocked, never attempted"; omitted (and absent
+    from the payload) otherwise, so an unoverridden event is unchanged. Like every helper here it
+    records and never raises: a verification that cannot be logged must not change whether the run
+    reports complete.
     """
-    return record("verification", {
+    payload: Dict[str, Any] = {
         "item": item, "verdict": verdict, "evidence": evidence, "phase": phase,
-    }, command=command, decision_id=decision_id, path=path)
+    }
+    if own_verdict:
+        payload["own_verdict"] = own_verdict
+    return record("verification", payload, command=command, decision_id=decision_id, path=path)
 
 
 def record_validation(check: str, status: str, findings: int = 0,

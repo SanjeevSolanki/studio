@@ -306,6 +306,48 @@ def test_item_waiting_on_an_open_question_is_incomplete_even_if_satisfied(tmp_pa
     assert result.unsatisfied == []  # blocked, not "unsatisfied" -- a distinct cause
 
 
+def _verification_event(log: Path, item: str) -> dict:
+    return next(e["payload"] for e in dl.read_events(path=log)
+                if e["event"] == "verification" and e["payload"].get("item") == item)
+
+
+def test_a_blocked_item_records_its_own_verdict(tmp_path: Path) -> None:
+    # A satisfied item blocked on an open question: the block overrides (not-satisfied, still blocked),
+    # but the event also carries own_verdict="satisfied" so an audit sees the work passed.
+    log = tmp_path / "log.jsonl"
+    _defer("pricing_model", log)
+    plan_dir, vpath = _plan(tmp_path, phase=_NEEDS_PHASE,
+                            verdicts=_verdict(_NEEDS_ITEM, "satisfied"))
+    result = vc.assess(plan_dir, vpath, log_path=log)
+    assert result.blocked_on_question == [_NEEDS_ITEM]  # completion unchanged -- still blocks
+    payload = _verification_event(log, _NEEDS_ITEM)
+    assert payload["verdict"] == "not-satisfied"        # the block overrides
+    assert payload["own_verdict"] == "satisfied"        # the run's own belief is recorded
+
+
+def test_a_blocked_item_never_stated_records_own_verdict_not_satisfied(tmp_path: Path) -> None:
+    # Blocked AND never attempted: own_verdict is the fail-safe not-satisfied, distinguishing it from
+    # "blocked but passed".
+    log = tmp_path / "log.jsonl"
+    _defer("pricing_model", log)
+    plan_dir, vpath = _plan(tmp_path, phase=_NEEDS_PHASE, verdicts="")  # nothing stated
+    result = vc.assess(plan_dir, vpath, log_path=log)
+    assert result.blocked_on_question == [_NEEDS_ITEM]
+    assert _verification_event(log, _NEEDS_ITEM)["own_verdict"] == "not-satisfied"
+
+
+def test_a_non_blocked_item_has_an_unchanged_payload(tmp_path: Path) -> None:
+    # An item with no dependency is byte-identical to before: assert the WHOLE payload, not just that
+    # own_verdict is absent, so a stray added field would also be caught.
+    log = tmp_path / "log.jsonl"
+    plan_dir, vpath = _plan(tmp_path, phase="## Acceptance Criteria\n- [ ] PRD approved\n",
+                            verdicts=_verdict("PRD approved", "satisfied"))
+    vc.assess(plan_dir, vpath, log_path=log)
+    assert _verification_event(log, "PRD approved") == {
+        "item": "PRD approved", "verdict": "satisfied", "evidence": "ok", "phase": 1,
+    }
+
+
 def test_answering_the_question_lets_the_item_complete(tmp_path: Path) -> None:
     log = tmp_path / "log.jsonl"
     _defer("pricing_model", log)
