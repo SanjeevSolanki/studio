@@ -201,10 +201,14 @@ def _reconcile(items: plan_items.PlanItems, verdicts: Verdicts,
             # never raised both leave the declared dependency unaddressed, so the item is not done.
             why = ("is still outstanding" if register.is_open(key)
                    else "was never raised, so this declared dependency is unaddressed")
+            # Record the run's OWN verdict alongside the block so an audit can tell "blocked, but the
+            # work passed" from "blocked, never attempted". The block still overrides -- the primary
+            # verdict stays not-satisfied and the item stays in `blocked` -- completion is unchanged.
+            own_verdict = _verdict_for(item, verdicts, text_counts)[0]  # the run's own belief
             decision_log.record_verification(
                 item.text, "not-satisfied",
                 f"waits on the open question {key!r}, which {why}", item.phase,
-                command=_COMMAND, path=log_path)
+                own_verdict=own_verdict, command=_COMMAND, path=log_path)
             blocked.append(item.text)
             continue
         verdict, evidence, reason = _verdict_for(item, verdicts, text_counts)
