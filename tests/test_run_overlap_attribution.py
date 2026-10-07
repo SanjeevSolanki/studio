@@ -149,14 +149,13 @@ def test_an_overlapping_runs_answer_cannot_complete_this_run(
         "the thing it claims to watch")
 
 
-#: The kinds that close a question **on this branch**. `exception-asked` answers only once the
-#: conditional rule from the completion-check work lands; until then a run cannot complete on one,
-#: so asserting that it does would be asserting someone else's change. It joins this list in the
-#: branch that adds the rule.
-_KINDS_THAT_ANSWER_HERE = [p for p in _ANSWERING_KINDS if p.id != "exception-asked"]
-
-
-@pytest.mark.parametrize("kind, provenance", _KINDS_THAT_ANSWER_HERE)
+#: Every kind that closes a question — `exception-asked` included, now that the conditional rule
+#: exists in this same tree. It was excluded while the two halves lived in separate branches,
+#: because asserting a run completes on an `exception-asked` would have been asserting a change
+#: that had not landed. That is what makes the three `exception-asked` cells of the matrix above
+#: load-bearing rather than merely fail-safe: until now their *close* half passed because nothing
+#: could answer that kind at all, and only their attribution half was doing any work.
+@pytest.mark.parametrize("kind, provenance", _ANSWERING_KINDS)
 def test_a_runs_own_answer_still_completes_it(
         tmp_path: Path, log: Path, monkeypatch: pytest.MonkeyPatch,
         kind: str, provenance: str) -> None:

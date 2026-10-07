@@ -31,6 +31,25 @@ RULES:
   ALWAYS after any `WAIT`/`STOP_TURN` resume at the exact active PDSL
     continuation target; REQUIRED: do not reinterpret the user's reply as
     broad permission for generic autonomous execution.
+  ALWAYS before a terminal reports a run successful **in a run that produced an execution
+    plan**, write the run's verdict for each of that plan's acceptance-criteria items to
+    `verdicts.toml` beside it, naming the run in that file's `run_id` field so the check scopes
+    to the evidence it is reading, then RUN `{cfs_cmd} verify-completion <the plan directory>`
+    and read its exit code. The precondition is the run having a plan, never a judgement that
+    the check would be inconvenient: a run that produced one may not report success without it.
+    A workflow that legitimately never produces a plan -- exploring, mapping, answering -- has
+    no acceptance criteria to verify and this rule is silent for it; `verify-completion` exiting
+    `1` for a missing plan is a fault only where a plan was expected. Autonomy changes who
+    answers an eligible question, never what is checked, so this holds in every mode.
+  NEVER report a run successful when that check does not exit `0`: exit `2` means an item is
+    unsatisfied, unstated, still waiting on an open question, that a phase's acceptance criteria
+    could not be read, or that the plan was never approved, and exit `1` means the check itself
+    could not run -- including when there is no plan to check against; report the blocking cause
+    instead. A plan that declares no
+    acceptance criteria is the one benign case: the check states it as not-applicable and
+    exits `0` -- but only once approved, since the approval refusal is checked first, so an
+    unapproved plan with no criteria exits `2` rather than passing vacuously. Read the exit
+    code and the stated cause; never infer the benign case from the empty checklist alone.
   ALWAYS record exactly one outcome for a gate that cannot be resolved: an open
     question naming the decision key it turns on, or a ruling — never both, and
     never neither. An indeterminate gate that records nothing has silently become
