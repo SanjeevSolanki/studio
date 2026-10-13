@@ -3759,3 +3759,26 @@ def test_review_granularity_does_not_over_escalate_to_per_layer() -> None:
     assert "ReviewGranularityMenu" in text
     for level in ("single-pass", "per-methodology", "per-layer"):
         assert f"SET REVIEW_GRANULARITY = {level}" in text
+
+
+def test_review_never_drops_a_covered_methodology_under_narrowing() -> None:
+    """#451: narrowing review scope under budget must not skip a whole methodology.
+
+    The regressing benchmark trial dropped the consistency reviewer on several re-reviews, and
+    that was the only trial whose held-out consistency tests regressed. This pins the
+    SemanticReviewNoSpinRules floor that forbids dropping a covered methodology; a mutation
+    deleting the rule must fail this test.
+    """
+    text = (REPO_ROOT / "skills/studio/modules/review/semantic-loop-skeleton.md").read_text(
+        encoding="utf-8-sig"
+    )
+    assert "SemanticReviewNoSpinRules" in text
+    floor = [
+        line
+        for line in text.splitlines()
+        if line.strip().startswith("NEVER") and "omits a methodology" in line
+    ]
+    assert floor, "SemanticReviewNoSpinRules is missing the methodology-diversity floor (#451)"
+    rule = floor[0]
+    assert "without an explicit, logged override" in rule
+    assert "every covered methodology keeps at least one reviewer" in rule
