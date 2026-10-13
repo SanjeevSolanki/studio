@@ -3729,3 +3729,33 @@ def test_no_gate_key_is_declared_at_more_than_one_site() -> None:
         "these declared gate keys are each used at more than one site; a key must be unique "
         f"so a plan resolves exactly one gate: {duplicates}"
     )
+
+
+def test_review_granularity_does_not_over_escalate_to_per_layer() -> None:
+    """#449: a normal change (including a new file/module) must suggest per-methodology, not per-layer.
+
+    Guards the two regressions behind Studio's ~22-reviewer fan-out on nearly every review: the
+    low (>50 line) per-layer floor, and 'new file/module' auto-triggering per-layer. Cutoffs
+    (200 / 3000) set with @ainetx from the benchmark data; update LOW/HIGH if they are retuned.
+    """
+    LOW, HIGH = 200, 3000
+    text = (REPO_ROOT / "skills/studio/modules/review/semantic-loop-skeleton.md").read_text(
+        encoding="utf-8-sig"
+    )
+    ladder = next(
+        line for line in text.splitlines() if "suggested level by change size" in line
+    )
+    # the old low ladder must be gone
+    assert "(≤10 changed lines) -> single-pass" not in ladder
+    assert "(11–50 changed lines) -> per-methodology" not in ladder
+    assert "(>50 changed lines) -> per-layer" not in ladder
+    # per-layer is gated behind the HIGH threshold; single-pass covers up to LOW
+    assert f"(>{HIGH} changed lines)" in ladder
+    assert f"({LOW}–{HIGH} changed lines) -> per-methodology" in ladder
+    # a new file/module routes to per-methodology, NOT per-layer
+    per_layer_trigger = ladder.rsplit("-> per-methodology", 1)[-1]
+    assert "new file" not in per_layer_trigger and "new module" not in per_layer_trigger
+    # the three-level menu is still intact
+    assert "ReviewGranularityMenu" in text
+    for level in ("single-pass", "per-methodology", "per-layer"):
+        assert f"SET REVIEW_GRANULARITY = {level}" in text

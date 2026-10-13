@@ -16,15 +16,15 @@ DO:
   STOP_TURN
 RULES:
   ALWAYS count changed lines for the granularity suggestion as the total review-surface delta across the target set: additions + deletions + modified lines, including comments and blank-line changes when they are part of the diff, aggregated across files rather than per-file; when a tiny textual diff hides a structural semantic rewrite, prefer the larger structural bucket
-  ALWAYS offer the granularity choice with a suggested level by change size: tiny edit (≤10 changed lines) -> single-pass, moderate edit (11–50 changed lines) -> per-methodology, new file/module/document or large/structural change (>50 changed lines) -> per-layer
+  ALWAYS offer the granularity choice with a suggested level by change size: small edit (below 200 changed lines) -> single-pass, normal change including a new file/module/document (200–3000 changed lines) -> per-methodology, very large (>3000 changed lines) or a change spanning many distinct subsystems or a structural rewrite -> per-layer
   ALWAYS explain the owning workflow's concrete methodologies or reviewer groups before showing the shared menu
   ALWAYS treat single-pass as fastest, per-methodology as balanced, and per-layer as most thorough
 MENU ReviewGranularityMenu
 TITLE: Choose review depth — the suggested level fits the change size.
 OPTIONS:
-  1 single-pass -> SET REVIEW_GRANULARITY = single-pass; review all applicable methodologies in one combined pass (fastest; suggested for tiny edits)
-  2 per-methodology -> SET REVIEW_GRANULARITY = per-methodology; review one dispatch group per applicable methodology (balanced; suggested for moderate edits)
-  3 per-layer -> SET REVIEW_GRANULARITY = per-layer; review every category/layer each methodology defines, in parallel when available (most thorough; suggested for new files/modules/documents or structural changes)
+  1 single-pass -> SET REVIEW_GRANULARITY = single-pass; review all applicable methodologies in one combined pass (fastest; suggested for small edits)
+  2 per-methodology -> SET REVIEW_GRANULARITY = per-methodology; review one dispatch group per applicable methodology (balanced; suggested for normal changes, including a new file or module)
+  3 per-layer -> SET REVIEW_GRANULARITY = per-layer; review every category/layer each methodology defines, in parallel when available (most thorough; suggested for very large or cross-cutting changes only)
   INVALID -> EMIT_MENU ReviewGranularityMenu
 ```
 
