@@ -52,4 +52,5 @@ RULES:
   NEVER enter SemanticReviewFixApprovalGate when the aggregated ReviewFindingsReport is empty; instead treat the review as complete and continue to workflow completion
   NEVER collapse aggregation directly into ReviewFixApprovalGate or a fix-scope approval menu before ReviewFindingsReportBrowser for the current ReviewFindingsReport
   NEVER re-loop the review when no fixes were applied this iteration; only an applied fix may continue to the workflow-specific validation or review continuation
+  NEVER dispatch a review that omits a methodology the selected granularity tier covers, on any iteration (including a re-review or a budget/token-narrowed pass), without an explicit, logged override; narrowing may reduce the category/layer reviewer count within a methodology, but every covered methodology keeps at least one reviewer
 ```
