@@ -39,6 +39,7 @@ RULES:
     no dangling links)
   - ALWAYS follow conventions defined in the kit's rules.md (naming, ordering, casing)
   - ALWAYS implement all approved inputs in generated content — nothing silently dropped
+  - ALWAYS WHEN authoring code that introduces a new generic-infrastructure module (auth, plugin or instance resolution, protocol or stream parsing, retry, caching, and similar toolkit-shaped responsibilities): first check the provided resource context for an existing reusable facility covering that responsibility, and run a scoped search for one when none is provided; prefer reusing it or a minimal wrapper over a new implementation, and record a short justification when writing new instead (resource context stays advisory and never gates the output)
   - ALWAYS emit tests when the kind/rules require them
   - ALWAYS emit traceability markers (e.g. @cpt-...) when to_code="true" on the kind
   - ALWAYS use CDSL (Constructor Domain-Specific Language) per kit's rules in

@@ -3782,3 +3782,45 @@ def test_review_never_drops_a_covered_methodology_under_narrowing() -> None:
     rule = floor[0]
     assert "without an explicit, logged override" in rule
     assert "every covered methodology keeps at least one reviewer" in rule
+
+
+def test_author_production_rules_require_a_reuse_check_for_new_infra_modules() -> None:
+    """#458: a writer authoring a new generic-infrastructure module must consult the provided
+    resource context for an existing reusable facility (or run a scoped search when none is
+    provided) and prefer reuse or record a justification before writing new.
+
+    The rule lives in the Content Production Rules (author-production-rules.md), which the shared
+    author-worker generator applies to every writer, including cf-generate-coder-{casual,smart}.
+    It stays advisory (never gates the output), consistent with the repo-wide invariant.
+    A mutation deleting the rule, or any substantive clause, must fail this test.
+    """
+    text = (REPO_ROOT / "skills/studio/agents/author-production-rules.md").read_text(
+        encoding="utf-8-sig"
+    )
+    rule = [line for line in text.splitlines() if "existing reusable facility" in line]
+    assert rule, "author-production-rules is missing the #458 reuse-check rule"
+    r = rule[0]
+    assert "new generic-infrastructure module" in r
+    assert "minimal wrapper" in r
+    assert "justification" in r
+    assert "never gates" in r  # keeps the resource context non-gating
+    # #458 also asks for a scoped search when saved findings are unavailable (CodeRabbit)
+    assert "scoped search" in r
+    assert "when none is provided" in r
+
+
+def test_the_reuse_rule_reaches_the_writer_via_content_production_rules() -> None:
+    """#458 wiring (B7): the reuse rule only works if the writer actually applies it.
+
+    The shared author-worker generator's create methodology generates content per the Content
+    Production Rules, and those rules declare they apply to the coder tiers. Assert both halves so
+    the rule is provably reached by the writer, not merely present in a file.
+    """
+    worker = (REPO_ROOT / "skills/studio/agents/cf-generate-author-worker.md").read_text(
+        encoding="utf-8-sig"
+    )
+    assert "Content Production Rules" in worker  # the create methodology applies them
+    rules = (REPO_ROOT / "skills/studio/agents/author-production-rules.md").read_text(
+        encoding="utf-8-sig"
+    )
+    assert "cf-generate-coder" in rules  # those rules apply to the coder tiers
